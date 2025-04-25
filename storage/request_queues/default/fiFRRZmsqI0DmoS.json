@@ -1,0 +1,24 @@
+{
+  "id": "fiFRRZmsqI0DmoS",
+  "unique_key": "https://learnbybuilding.ai/tags/software%20development",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:35:00.139020+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/tags/Software%20Development",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 5,
+        "crawlDepth": 1
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/tags/Software%20Development",
+    "handled_at": "2025-04-24 23:35:00.139020+00:00",
+    "unique_key": "https://learnbybuilding.ai/tags/software%20development",
+    "id": "fiFRRZmsqI0DmoS"
+  }
+}

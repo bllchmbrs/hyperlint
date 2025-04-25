@@ -1,0 +1,24 @@
+{
+  "id": "afV7txifTjM5oTV",
+  "unique_key": "https://learnbybuilding.ai/newsletter?ref=lbb-post",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:35:02.118373+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/newsletter?ref=lbb-post",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 3,
+        "crawlDepth": 2
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/newsletter/?ref=lbb-post",
+    "handled_at": "2025-04-24 23:35:02.118373+00:00",
+    "unique_key": "https://learnbybuilding.ai/newsletter?ref=lbb-post",
+    "id": "afV7txifTjM5oTV"
+  }
+}

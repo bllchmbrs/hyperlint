@@ -1,0 +1,24 @@
+{
+  "id": "9IaK7XQcr8EQMgl",
+  "unique_key": "https://learnbybuilding.ai/tutorial/guiding-llm-output-with-dspy-assertions-and-suggestions",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:34:48.629843+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/tutorial/guiding-llm-output-with-dspy-assertions-and-suggestions",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 3,
+        "crawlDepth": 1
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/tutorial/guiding-llm-output-with-dspy-assertions-and-suggestions/",
+    "handled_at": "2025-04-24 23:34:48.629843+00:00",
+    "unique_key": "https://learnbybuilding.ai/tutorial/guiding-llm-output-with-dspy-assertions-and-suggestions",
+    "id": "9IaK7XQcr8EQMgl"
+  }
+}

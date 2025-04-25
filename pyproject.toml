@@ -1,0 +1,19 @@
+[project]
+name = "tutedit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "diskcache>=5.6.3",
+    "instructor>=1.7.9",
+    "litellm>=1.67.2",
+    "loguru>=0.7.3",
+    "smolcrawl>=0.1.7",
+    "spacy>=3.8.5",
+    "typer>=0.15.2",
+]
+
+[project.scripts]
+tutedit = "tutedit.cli:app"
+

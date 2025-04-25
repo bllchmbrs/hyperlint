@@ -1,0 +1,24 @@
+{
+  "id": "hPyXkNlHXpaJJPa",
+  "unique_key": "https://learnbybuilding.ai/comparison/marvin-ai-vs-guardrails-vs-instructor",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:34:53.480987+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/comparison/marvin-ai-vs-guardrails-vs-instructor",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 3,
+        "crawlDepth": 1
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/comparison/marvin-ai-vs-guardrails-vs-instructor/",
+    "handled_at": "2025-04-24 23:34:53.480987+00:00",
+    "unique_key": "https://learnbybuilding.ai/comparison/marvin-ai-vs-guardrails-vs-instructor",
+    "id": "hPyXkNlHXpaJJPa"
+  }
+}

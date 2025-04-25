@@ -1,0 +1,24 @@
+{
+  "id": "yeVoE4MfshQg4zR",
+  "unique_key": "https://learnbybuilding.ai/newsletter",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:34:33.401862+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/newsletter",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 3,
+        "crawlDepth": 1
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/newsletter/",
+    "handled_at": "2025-04-24 23:34:33.401862+00:00",
+    "unique_key": "https://learnbybuilding.ai/newsletter",
+    "id": "yeVoE4MfshQg4zR"
+  }
+}

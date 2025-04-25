@@ -1,0 +1,24 @@
+{
+  "id": "yS8Sqm3DG8UANHk",
+  "unique_key": "https://learnbybuilding.ai/tags/nlp",
+  "order_no": null,
+  "handled_at": "2025-04-24 23:34:52.055164+00:00",
+  "request": {
+    "url": "https://learnbybuilding.ai/tags/nlp",
+    "method": "GET",
+    "headers": {},
+    "payload": null,
+    "user_data": {
+      "__crawlee": {
+        "state": 3,
+        "crawlDepth": 1
+      }
+    },
+    "retry_count": 0,
+    "no_retry": false,
+    "loaded_url": "https://learnbybuilding.ai/tags/nlp/",
+    "handled_at": "2025-04-24 23:34:52.055164+00:00",
+    "unique_key": "https://learnbybuilding.ai/tags/nlp",
+    "id": "yS8Sqm3DG8UANHk"
+  }
+}
