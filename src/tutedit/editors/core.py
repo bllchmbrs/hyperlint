@@ -88,6 +88,11 @@ class DeleteLineIssue(ReplaceLineFixableIssue):
 class BaseEditor(ABC, BaseModel):
     path: FilePath
     text: str | None = None
+    replacements: List[ReplaceLineFixableIssue] = Field(
+        default_factory=list, repr=False
+    )
+    insertions: List[InsertLineIssue] = Field(default_factory=list, repr=False)
+    deletions: List[DeleteLineIssue] = Field(default_factory=list, repr=False)
 
     def get_text(self) -> str:
         if self.text is None:
@@ -97,6 +102,21 @@ class BaseEditor(ABC, BaseModel):
 
     @abstractmethod
     def prerun_checks(self) -> bool:
+        pass
+
+    # Add methods for subclasses to add issues
+    def add_replacement(self, issue: ReplaceLineFixableIssue):
+        self.replacements.append(issue)
+
+    def add_insertion(self, issue: InsertLineIssue):
+        self.insertions.append(issue)
+
+    def add_deletion(self, issue: DeleteLineIssue):
+        self.deletions.append(issue)
+
+    @abstractmethod
+    def collect_issues(self) -> None:
+        """Subclasses must implement this method to populate the internal issue lists."""
         pass
 
     def get_line_number_lookup(self) -> Dict[int, str]:
@@ -115,61 +135,62 @@ class BaseEditor(ABC, BaseModel):
             )
         )
 
-    @abstractmethod
-    def get_line_replacements(self) -> List[ReplaceLineFixableIssue]:
-        pass
-
-    @abstractmethod
-    def get_line_insertions(self) -> List[InsertLineIssue]:
-        pass
-
-    @abstractmethod
-    def get_line_deletions(self) -> List[DeleteLineIssue]:
-        pass
-
-    def _process_line_replacements(self) -> None:
-        line_lookup = self.get_line_number_lookup()
-        replacements = self.get_line_replacements()
-        deletions = self.get_line_deletions()
-        for line_issue in deletions + replacements:
-            new_line = line_issue.fix()
-            lookedup_line = line_lookup[line_issue.line]
-            logger.success(
-                f"Replacing line {line_issue.line} with content: {lookedup_line}"
-            )
-            line_lookup[line_issue.line] = new_line
-
-        self.text = "\n".join(line_lookup.values())
-
-    def _process_line_insertions(self) -> None:
-        sorted_insertions = sorted(self.get_line_insertions(), key=lambda x: x.line)
-        logger.info(
-            f"Found {len(sorted_insertions)} line insertions",
-            insertions=sorted_insertions,
-        )
-        final_lines: List[str] = []
-
-        for line_no, line_content in self.get_line_number_lookup().items():
-            for insert in sorted_insertions:
-                if insert.line == line_no:
-                    final_lines.append(insert.insert_content)
-                    break
-            else:
-                final_lines.append(line_content)
-        self.text = "\n".join(final_lines)
-
-    def _process_deletions(self) -> None:
-        final_lines = []
-        line_lookup = self.get_line_number_lookup()
-        for line_no, line_content in line_lookup.items():
-            if line_content == DELETE_LINE_MESSAGE:
-                del line_lookup[line_no]
-            else:
-                final_lines.append(line_content)
-        self.text = "\n".join(final_lines)
-
     def generate_v2(self) -> str:
-        self._process_line_replacements()
-        self._process_line_insertions()
-        self._process_deletions()
+        # Ensure text is loaded
+        self.get_text()
+        # Let subclass populate the issues
+        self.collect_issues()
+
+        initial_line_lookup = self.get_line_number_lookup()
+        changes: Dict[int, str] = {}  # Store results of fixes/deletions
+
+        # Process replacements
+        for issue in self.replacements:
+            new_content = issue.fix()
+            changes[issue.line] = new_content
+            logger.success(f"Replacing line {issue.line} with content: {new_content}")
+
+        # Process deletions
+        for issue in self.deletions:
+            changes[issue.line] = DELETE_LINE_MESSAGE  # Mark for deletion
+            logger.warning(f"Deleting line {issue.line}: {issue.existing_content}")
+
+        final_lines: List[str] = []
+        sorted_insertions = sorted(self.insertions, key=lambda x: x.line)
+        insertion_idx = 0
+
+        # Iterate through original lines, applying changes and insertions
+        for line_no, original_content in sorted(initial_line_lookup.items()):
+            # Process insertions BEFORE this line number
+            while (
+                insertion_idx < len(sorted_insertions)
+                and sorted_insertions[insertion_idx].line == line_no
+            ):
+                insert_issue = sorted_insertions[insertion_idx]
+                final_lines.append(insert_issue.insert_content)
+                logger.info(
+                    f"Inserting before line {line_no}: {insert_issue.insert_content}"
+                )
+                insertion_idx += 1
+
+            # Process change/deletion for this line number
+            if line_no in changes:
+                change_content = changes[line_no]
+                if change_content != DELETE_LINE_MESSAGE:
+                    final_lines.append(change_content)
+                # else: line is deleted, do nothing
+            else:
+                # No change, keep original content
+                final_lines.append(original_content)
+
+        # Handle any insertions that should occur after the last line
+        while insertion_idx < len(sorted_insertions):
+            insert_issue = sorted_insertions[insertion_idx]
+            logger.info(
+                f"Inserting after last line ({insert_issue.line}): {insert_issue.insert_content}"
+            )
+            final_lines.append(insert_issue.insert_content)
+            insertion_idx += 1
+
+        self.text = "\n".join(final_lines)
         return self.get_text()

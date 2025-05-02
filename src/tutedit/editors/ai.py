@@ -7,12 +7,7 @@ from litellm import completion
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from .core import (
-    BaseEditor,
-    DeleteLineIssue,
-    InsertLineIssue,
-    ReplaceLineFixableIssue,
-)
+from .core import BaseEditor, DeleteLineIssue, InsertLineIssue
 
 # Constants
 # Use a separate cache directory for this editor
@@ -169,20 +164,11 @@ class AIEditor(BaseEditor):
     It can suggest edits, deletions, or flag issues for manual review.
     """
 
-    delete_line_tasks: List[DeleteLineIssue] = []
-    replace_line_tasks: List[ReplaceLineFixableIssue] = []
-    insert_line_tasks: List[InsertLineIssue] = []
-
     def _fetch_line_edits(self) -> LineEdits:
         """Fetches or retrieves cached line edits for the current text."""
 
         logger.debug("Fetching line edits from AI...")
-        text_with_line_numbers = "\n".join(
-            [
-                f"{line_number}: {line_content}"
-                for line_number, line_content in self.get_line_number_lookup().items()
-            ]
-        )
+        text_with_line_numbers = self.get_text_with_line_numbers()  # Use helper
         # Use the configured model for detection
         return get_line_edits(text_with_line_numbers)
 
@@ -192,192 +178,116 @@ class AIEditor(BaseEditor):
         logger.success("AI Editor prerun checks passed.")
         return True
 
-    def run_line_replace_processing(self) -> None:
-        """Generates ReplaceLineFixableIssue objects for edits suggested by the AI.
-
-        Handles the replacement of the *first line* of an identified block.
-        Deletion of subsequent original lines (if any) is handled by `get_deletions`.
-        Insertion of subsequent corrected lines (if any) is not yet implemented.
-        """
+    def collect_issues(self) -> None:
+        """Collects issues identified by AI and translates them into insertions/deletions."""
         line_edits_response = self._fetch_line_edits()
-        replace_issues: List[ReplaceLineFixableIssue] = []
         line_lookup = self.get_line_number_lookup()
+        processed_lines = set()  # Track lines involved in an operation
+        insertions_count = 0
+        deletions_count = 0
+        flagged_count = 0
 
-        edit_requests = [
-            le for le in line_edits_response.line_edits if le.resolution == "edit"
-        ]
-        logger.info(
-            f"Processing {len(edit_requests)} 'edit' requests for potential replacements."
+        # Sort edits by starting line to process potentially overlapping edits predictably
+        sorted_edits = sorted(
+            line_edits_response.line_edits, key=lambda le: le.starting_affected_line
         )
 
-        for line_edit in edit_requests:
+        for line_edit in sorted_edits:
             start = line_edit.starting_affected_line
             end = line_edit.ending_affected_line
-            issue_desc = f"AI Edit: {line_edit.issue_message}"
+            resolution = line_edit.resolution
+            issue_desc = f"AI {resolution.capitalize()}: {line_edit.issue_message}"
 
-            # Validate line numbers
+            # Validate line numbers against the original lookup
             if not (start in line_lookup and end in line_lookup and start <= end):
                 logger.error(
                     f"Invalid line numbers ({start}-{end}) in line edit: {line_edit.issue_message}. Skipping."
                 )
                 continue
 
-            # Extract relevant lines
-            relevant_lines_list = [line_lookup[i] for i in range(start, end + 1)]
-            relevant_lines_text = "\n".join(relevant_lines_list)
-
-            # Get the fix from AI
-            corrected_text = fix_line_edit(line_edit, relevant_lines_text)
-
-            if corrected_text is not None:
-                # Split corrected text into lines
-                corrected_lines = corrected_text.splitlines()
-
-                if not corrected_lines:
-                    logger.warning(
-                        f"AI returned empty correction for lines {start}-{end}. Skipping replacement (will be handled by get_deletions if resolution was 'delete')."
-                    )
-                    continue  # Skip creating a replacement issue if the correction is empty
-
-                # Create the replacement issue for the *first* line only.
-                # Add a note if the original block or the correction was multi-line.
-                additional_notes = []
-                is_multiline_edit = len(corrected_lines) > 1 or (end > start)
-                if is_multiline_edit:
-                    additional_notes.append(
-                        f"(Note: Original block lines {start + 1}-{end} handled by deletions. "
-                        f"Multi-line correction received; only first line applied here.)"
-                    )
-                    logger.warning(
-                        f"AI correction for lines {start}-{end} involves multiple lines "
-                        f"(original block size: {end - start + 1}, corrected lines: {len(corrected_lines)}). "
-                        f"Replacing line {start} with the first corrected line. "
-                        "Ensure get_deletions handles original lines "
-                        f"{start + 1}-{end}."  # Adjusted log message
-                    )
-
-                replace_issues.append(
-                    ReplaceLineFixableIssue(
-                        line=start,
-                        # Combine original AI issue message with any notes
-                        issue_message=[issue_desc] + additional_notes,
-                        existing_content=line_lookup[start],
-                        # Provide the first line of the corrected text for replacement
-                        # The IssueManager applying this needs to handle using this.
-                        # Assuming IssueManager implicitly uses the first line or can be adapted.
-                        # For now, we store the replacement content conceptually.
-                        # Let's add it to the object if the class supports it, otherwise it's implied.
-                        # Update: ReplaceLineFixableIssue has no field. It must be handled by the fixer.
-                        # The replacement *content* isn't stored on the issue itself in core.py.
-                        # We signal the *intent* to replace line `start` with `corrected_lines[0]`.
-                        # We must pass `corrected_lines[0]` to the fixing mechanism later.
-                        # TODO: The actual replacement content (corrected_lines[0]) needs to be passed
-                        # to the mechanism that *applies* the fix for ReplaceLineFixableIssue.
-                        # This method only *identifies* the issue.
-                    )
-                )
-                delete_line_nos = range(start + 1, end + 1)
-                for line_no in delete_line_nos:
-                    self.delete_line_tasks.append(
-                        DeleteLineIssue(
-                            line=line_no,
-                            existing_content=line_lookup[line_no],
-                            issue_message=[f"AI Delete: {line_edit.issue_message}"],
-                        )
-                    )
-            else:
+            # Check for overlap with already processed lines
+            current_range = set(range(start, end + 1))
+            if not current_range.isdisjoint(processed_lines):
                 logger.warning(
-                    f"Failed to get AI correction for lines {start}-{end}. Skipping replacement."
-                )
-
-        logger.success(f"Generated {len(replace_issues)} line replacement suggestions.")
-        self.replace_line_tasks = replace_issues
-
-    def run_line_deletion_processing(self) -> None:
-        """Generates DeleteLineIssue objects for deletions or replaced lines."""
-        line_edits_response = self._fetch_line_edits()
-        delete_issues: List[DeleteLineIssue] = []
-        line_lookup = self.get_line_number_lookup()
-
-        # Lines marked explicitly for deletion by AI
-        delete_requests = [
-            le for le in line_edits_response.line_edits if le.resolution == "delete"
-        ]
-        logger.info(f"Processing {len(delete_requests)} 'delete' requests.")
-        for line_edit in delete_requests:
-            start = line_edit.starting_affected_line
-            end = line_edit.ending_affected_line
-            if not (start in line_lookup and end in line_lookup and start <= end):
-                logger.warning(
-                    f"Invalid line numbers ({start}-{end}) in delete request: {line_edit.issue_message}. Skipping."
+                    f"Skipping line edit for lines {start}-{end} due to overlap with a previous edit: {line_edit.issue_message}"
                 )
                 continue
-            for line_num in range(start, end + 1):
-                # Avoid adding duplicate deletions
-                if not any(d.line == line_num for d in delete_issues):
-                    delete_issues.append(
+
+            # Mark lines as processed
+            processed_lines.update(current_range)
+
+            if resolution == "edit":
+                # Extract relevant lines
+                relevant_lines_list = [line_lookup[i] for i in range(start, end + 1)]
+                relevant_lines_text = "\n".join(relevant_lines_list)
+
+                # Get the fix from AI
+                corrected_text = fix_line_edit(line_edit, relevant_lines_text)
+
+                if corrected_text is not None:
+                    if corrected_text.strip():  # Non-empty correction
+                        corrected_lines = corrected_text.splitlines()
+
+                        # 1. Add insertions for the corrected lines (inserted before original start)
+                        for i, line_content in enumerate(corrected_lines):
+                            # Insert each new line before the original start line.
+                            # The BaseEditor process logic handles sequential insertions.
+                            self.add_insertion(
+                                InsertLineIssue(line=start, insert_content=line_content)
+                            )
+                            insertions_count += 1
+                        logger.info(
+                            f"Added {len(corrected_lines)} insertions for AI edit at lines {start}-{end}"
+                        )
+
+                        # 2. Add deletions for the original lines
+                        for line_num in range(start, end + 1):
+                            self.add_deletion(
+                                DeleteLineIssue(
+                                    line=line_num,
+                                    existing_content=line_lookup[line_num],
+                                    issue_message=[
+                                        f"AI Edit (Deleting original line): {line_edit.issue_message}"
+                                    ],
+                                )
+                            )
+                            deletions_count += 1
+                        logger.info(
+                            f"Added {end - start + 1} deletions for AI edit at lines {start}-{end}"
+                        )
+
+                    else:  # Empty correction -> Treat as delete
+                        logger.warning(
+                            f"AI returned empty correction for lines {start}-{end}. Treating as 'delete'."
+                        )
+                        resolution = "delete"  # Fall through to delete logic
+                else:  # Failed to get correction -> Treat as flag
+                    logger.error(
+                        f"Failed to get AI correction for lines {start}-{end}. Treating as 'flag'."
+                    )
+                    resolution = "flag"  # Fall through to flag logic
+
+            if resolution == "delete":
+                for line_num in range(start, end + 1):
+                    self.add_deletion(
                         DeleteLineIssue(
                             line=line_num,
                             existing_content=line_lookup[line_num],
-                            issue_message=[f"AI Delete: {line_edit.issue_message}"],
+                            issue_message=[issue_desc],
                         )
                     )
-
-        # Lines that are part of a multi-line block being replaced (delete lines after the first)
-        edit_requests = [
-            le for le in line_edits_response.line_edits if le.resolution == "edit"
-        ]
-        for line_edit in edit_requests:
-            start = line_edit.starting_affected_line
-            end = line_edit.ending_affected_line
-            # Only add deletions if it was a multi-line block (end > start)
-            if end > start:
-                if not (start in line_lookup and end in line_lookup):
-                    # Warning issued in get_line_replacements
-                    continue
-
-                for line_num in range(start + 1, end + 1):
-                    # Check if the line exists and avoid duplicates
-                    if line_num in line_lookup and not any(
-                        d.line == line_num for d in delete_issues
-                    ):
-                        delete_issues.append(
-                            DeleteLineIssue(
-                                line=line_num,
-                                existing_content=line_lookup[line_num],
-                                issue_message=[
-                                    f"AI Edit (Removing original line after replacement): {line_edit.issue_message}"
-                                ],
-                            )
-                        )
-
-        # Handle flagged items (log them for now)
-        flag_requests = [
-            le for le in line_edits_response.line_edits if le.resolution == "flag"
-        ]
-        if flag_requests:
-            logger.warning(f"AI flagged {len(flag_requests)} issues for manual review:")
-            for line_edit in flag_requests:
-                logger.warning(
-                    f"  - Lines {line_edit.starting_affected_line}-{line_edit.ending_affected_line}: {line_edit.issue_message}"
+                    deletions_count += 1
+                logger.info(
+                    f"Added {end - start + 1} deletions for AI delete at lines {start}-{end}"
                 )
-                # TODO: Optionally write flagged issues to a file like in the inspiration code.
 
-        logger.success(f"Generated {len(delete_issues)} line deletion suggestions.")
-        # Sort deletions by line number before returning
+            if resolution == "flag":
+                logger.warning(
+                    f"Flagged by AI: Lines {start}-{end}: {line_edit.issue_message}"
+                )
+                flagged_count += 1
+                # Optionally add to a separate list or file if needed
 
-        final_deletions = sorted(delete_issues, key=lambda issue: issue.line)
-        self.delete_line_tasks = final_deletions
-
-    def get_line_insertions(self) -> List[InsertLineIssue]:
-        """This editor does not currently generate insertions directly."""
-        # Future enhancement: Could handle multi-line replacements from fix_line_edit here.
-        return []
-
-    def get_line_replacements(self) -> List[ReplaceLineFixableIssue]:
-        self.run_line_replace_processing()
-        return self.replace_line_tasks
-
-    def get_line_deletions(self) -> List[DeleteLineIssue]:
-        self.run_line_deletion_processing()
-        return self.delete_line_tasks
+        logger.success(
+            f"AI Editor finished collecting issues: {insertions_count} insertions, {deletions_count} deletions, {flagged_count} flagged."
+        )

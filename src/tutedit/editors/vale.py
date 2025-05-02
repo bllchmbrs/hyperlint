@@ -149,20 +149,31 @@ class ValeEditor(BaseEditor):
         vale_config_exists = os.path.exists(str(self.vale_config_path))
         return vale_installed and vale_config_exists
 
-    def get_line_replacements(self) -> List[ReplaceLineFixableIssue]:
+    def collect_issues(self) -> None:
+        """Runs Vale and adds any reported issues as replacement issues."""
         issues = run_vale(self.get_text(), str(self.vale_config_path))
-        line_numbers = self.get_line_number_lookup()
-        return [
-            ReplaceLineFixableIssue(
-                line=issue.line,
-                issue_message=issue.issue_message,
-                existing_content=line_numbers[issue.line],
-            )
-            for issue in issues
-        ]
+        if not issues:
+            logger.info("Vale reported no issues.")
+            return
 
-    def get_line_insertions(self) -> List[InsertLineIssue]:
-        return []
+        line_lookup = self.get_line_number_lookup()
+        replacements_count = 0
 
-    def get_line_deletions(self) -> List[DeleteLineIssue]:
-        return []
+        for issue in issues:
+            # Ensure the line number from Vale is valid
+            if issue.line in line_lookup:
+                replacement_issue = ReplaceLineFixableIssue(
+                    line=issue.line,
+                    issue_message=issue.issue_message,
+                    existing_content=line_lookup[issue.line],
+                )
+                self.add_replacement(replacement_issue)
+                replacements_count += 1
+            else:
+                logger.warning(
+                    f"Skipping Vale issue for line {issue.line} as it's not in the lookup (maybe out of bounds?). Message: {issue.issue_message}"
+                )
+
+        logger.success(
+            f"Collected {replacements_count} line replacement issues from Vale."
+        )

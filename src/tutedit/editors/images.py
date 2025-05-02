@@ -527,33 +527,24 @@ class ImageAdditionEditor(BaseEditor):
             return True
         return True
 
-    def get_line_replacements(self) -> List[ReplaceLineFixableIssue]:
-        """This editor does not currently replace lines."""
-        return []
-
-    def get_line_insertions(self) -> List[InsertLineIssue]:
-        """Generates InsertLineIssue objects for images and their ambles."""
+    def collect_issues(self) -> None:
+        """Finds images, prepares them, determines locations, and adds insertion issues."""
         image_dir = self._get_image_dir()
         if not image_dir:
-            return []
+            return
 
         # Prepare images (includes renaming/copying)
         image_objects = self._prepare_images(image_dir)
         if not image_objects:
             logger.info("No images found or prepared. No insertions to generate.")
-            return []
+            return
 
-        text_with_line_numbers = "\n".join(
-            [
-                f"{line_number}: {line_content}"
-                for line_number, line_content in self.get_line_number_lookup().items()
-            ]
-        )
+        text_with_line_numbers = self.get_text_with_line_numbers()  # Use helper method
 
-        all_insertions: List[InsertLineIssue] = []
         # Keep track of lines where insertions *will* happen to avoid conflicts between images
         # Includes line itself and potentially +/- 1 for ambles
         blacklist_locations: List[int] = [0, 1, 2, 3]  # Initial blacklist
+        insertions_count = 0
 
         for image in image_objects:
             # Pass the current blacklist to the image processing method
@@ -562,7 +553,16 @@ class ImageAdditionEditor(BaseEditor):
             )
 
             if current_image_insertions:
-                all_insertions.extend(current_image_insertions)
+                # Sort insertions for this specific image before adding
+                # This ensures ambles and image are added in the correct order relative to each other
+                sorted_current_insertions = sorted(
+                    current_image_insertions, key=lambda issue: issue.line
+                )
+
+                for issue in sorted_current_insertions:
+                    self.add_insertion(issue)  # Add to the BaseEditor's list
+                    insertions_count += 1
+
                 # Update blacklist with the lines affected by these insertions
                 # The insertion line numbers are relative to the *original* document state
                 # before these insertions are applied.
@@ -581,13 +581,6 @@ class ImageAdditionEditor(BaseEditor):
                 blacklist_locations = sorted(list(set(blacklist_locations)))
 
         logger.success(
-            f"Generated a total of {len(all_insertions)} line insertions for {len(image_objects)} images."
+            f"Collected a total of {insertions_count} line insertions for {len(image_objects)} images."
         )
-
-        # IMPORTANT: Sort all insertions globally by line number *before* returning
-        # This ensures they are applied sequentially from top to bottom.
-        return sorted(all_insertions, key=lambda issue: issue.line)
-
-    def get_line_deletions(self) -> List[DeleteLineIssue]:
-        """This editor does not currently delete lines."""
-        return []
+        # No need to return anything or sort globally here, BaseEditor handles processing order

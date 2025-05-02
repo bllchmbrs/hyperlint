@@ -8,13 +8,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, HttpUrl
 from smolcrawl.db import Page, TantivyIndexer
 
-from .core import (
-    BaseEditor,
-    DeleteLineIssue,
-    InsertLineIssue,
-    LineIssue,
-    ReplaceLineFixableIssue,
-)
+from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
 from .utils import get_search_terms
 
 cache = diskcache.Cache("./data/cache/editing")
@@ -163,32 +157,39 @@ class InternalLinkEditor(BaseEditor):
 
         return True
 
-    def get_line_replacements(self) -> List[ReplaceLineFixableIssue]:
-        text_with_line_numbers = "\n".join(
-            [
-                f"{line_number}: {line_content}"
-                for line_number, line_content in self.get_line_number_lookup().items()
-            ]
-        )
-        all_recd_links = []
+    def collect_issues(self) -> None:
+        """Recommends internal links based on search terms and adds them as replacement issues."""
+        text_with_line_numbers = self.get_text_with_line_numbers()
+        line_lookup = self.get_line_number_lookup()
+        replacements_count = 0
+
         for index_name in self.indexes:
+            logger.info(f"Processing index: {index_name}")
             recd_links = recommend_internal_links(text_with_line_numbers, index_name)
-            if recd_links:
-                logger.success(
-                    f"Found {len(recd_links)} internal links for index {index_name}"
-                )
-            all_recd_links.extend(recd_links)
-        return [
-            ReplaceLineFixableIssue(
-                line=link.line,
-                issue_message=link.issue_message,
-                existing_content=self.get_line_number_lookup()[link.line],
+
+            if not recd_links:
+                logger.info(f"No internal links found for index {index_name}")
+                continue
+
+            logger.success(
+                f"Found {len(recd_links)} potential internal link locations for index {index_name}"
             )
-            for link in all_recd_links
-        ]
 
-    def get_line_insertions(self) -> List[InsertLineIssue]:
-        return []
+            for link_issue in recd_links:
+                # Ensure the line exists in the current text
+                if link_issue.line in line_lookup:
+                    replacement_issue = ReplaceLineFixableIssue(
+                        line=link_issue.line,
+                        issue_message=link_issue.issue_message,
+                        existing_content=line_lookup[link_issue.line],
+                    )
+                    self.add_replacement(replacement_issue)
+                    replacements_count += 1
+                else:
+                    logger.warning(
+                        f"Skipping recommended link for line {link_issue.line} as it does not exist in the lookup."
+                    )
 
-    def get_line_deletions(self) -> List[DeleteLineIssue]:
-        return []
+        logger.success(
+            f"Collected {replacements_count} line replacement issues for internal links."
+        )
