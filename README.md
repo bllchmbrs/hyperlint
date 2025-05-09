@@ -74,6 +74,8 @@ python -m editai.cli links my-document.md --local-index-names docs-index
 python -m editai.cli links ./docs/ --local-index-names docs-index --recursive
 ```
 
+See the [link editor guide](docs/link_editor_guide.md) for more information on setting up and using the link editor.
+
 ### Image Addition Editor
 
 Add images to your document:
@@ -128,6 +130,8 @@ python -m editai.cli view-rule ./rules/ passive_voice
 python -m editai.cli create-rule ./rules/ my_new_rule
 ```
 
+See the [custom rules guide](docs/custom_rules_guide.md) for detailed information on creating and using custom rules.
+
 ## Examples
 
 Check the `examples/` directory for example files and usage scenarios.
@@ -153,7 +157,17 @@ python -m editai.cli edit ./docs/ --exclude custom_rules,images
 python -m editai.cli edit ./docs/ --sequential
 ```
 
-See the [configuration documentation](docs/configuration.md) for full details on the configuration system.
+See the [configuration documentation](docs/configuration.md) and the more comprehensive [configuration guide](docs/configuration_guide.md) for full details on the configuration system.
+
+## Documentation
+
+- [Command Reference](docs/command_reference.md) - Quick reference for all commands and options
+- [Configuration Guide](docs/configuration_guide.md) - Detailed guide to configuration
+- [Custom Rules Guide](docs/custom_rules_guide.md) - How to create and use custom rules
+- [Link Editor Guide](docs/link_editor_guide.md) - Setting up and using the link editor
+- [Folder Processing](docs/folder_processing.md) - Working with directories of files
+- [Configuration Documentation](docs/configuration.md) - Basic configuration information
+- [Troubleshooting](docs/troubleshooting.md) - Solving common issues
 
 ## License
 

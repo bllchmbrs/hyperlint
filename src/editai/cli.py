@@ -41,6 +41,19 @@ def vale(
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
+
+    Examples:
+        # Process a single file
+        editai vale docs/guide.md
+
+        # Process a directory with custom Vale configuration
+        editai vale docs/ --vale-config-path .vale.ini --recursive
+
+        # Preview changes without applying them
+        editai vale README.md --dry-run
+
+        # Process only specific files in a directory
+        editai vale docs/ --include-pattern "*.md" --exclude-patterns "draft/*,temp/*"
     """
     path_obj = Path(path)
 
@@ -106,6 +119,22 @@ def links(
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
+
+    Examples:
+        # Process a single file using the default index
+        editai links docs/getting-started.md
+
+        # Process a directory with specific indices
+        editai links docs/ --local-index-names api-docs,user-guide --recursive
+
+        # Process a file with web search for external resources
+        editai links README.md --websearch
+
+        # Preview changes without applying them
+        editai links docs/ --dry-run --recursive
+
+        # Process only markdown files excluding certain folders
+        editai links src/ --include-pattern "*.md" --exclude-patterns "drafts/*,archive/*"
     """
     path_obj = Path(path)
 
@@ -159,6 +188,22 @@ def add_images(
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
+
+    Examples:
+        # Add images to a single file
+        editai add-images docs/tutorial.md images/
+
+        # Add images to documents in a directory with a custom URL prefix
+        editai add-images docs/ assets/ --image-url-prefix /assets --recursive
+
+        # Preview image additions without applying them
+        editai add-images README.md images/ --dry-run
+
+        # Process specific files in a directory
+        editai add-images docs/ images/ --include-pattern "guide-*.md" --recursive
+
+        # Add images using a CDN URL prefix
+        editai add-images docs/tutorial.md images/ --image-url-prefix https://cdn.example.com/images
     """
     path_obj = Path(path)
     image_folder_path_obj = Path(image_folder_path)
@@ -214,6 +259,25 @@ def ai(
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
+
+    The AI editor uses machine learning to:
+    - Fix grammar and spelling issues
+    - Improve clarity and readability
+    - Standardize formatting and style
+    - Expand abbreviations and technical terms
+
+    Examples:
+        # Process a single file
+        editai ai docs/readme.md
+
+        # Process all markdown files in a directory and subdirectories
+        editai ai docs/ --recursive
+
+        # Preview AI improvements without applying them
+        editai ai tutorial.md --dry-run
+
+        # Process only specific files in a directory
+        editai ai docs/ --include-pattern "*.md" --exclude-patterns "draft/*,private/*" --recursive
     """
     path_obj = Path(path)
 
@@ -255,6 +319,20 @@ def arbitrary_links(path: str):
     Prompts for URLs and descriptions, then finds the best placement for each link.
 
     Note: This command doesn't support directory processing since it's interactive.
+
+    The REPL interface supports these commands:
+    - Enter a URL followed by an optional description to add a link
+    - Type 'exit' or 'quit' to exit the REPL and save changes
+    - Type 'abort' to exit without saving
+
+    Examples:
+        # Start interactive link addition for a document
+        editai arbitrary-links docs/getting-started.md
+
+        # Within the REPL session:
+        > https://example.com/api API Documentation
+        > https://github.com/project-repo GitHub Repository
+        > exit
     """
     path_obj = Path(path)
 
@@ -283,6 +361,28 @@ def custom_rules(
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
+
+    Custom rules are markdown files containing instructions for specific
+    edits like fixing passive voice or standardizing formatting.
+
+    Examples:
+        # Apply all rules to a single file
+        editai custom-rules docs/guide.md rules/
+
+        # Apply specific rules to a file
+        editai custom-rules README.md rules/ --include-rules passive_voice,bullet_consistency
+
+        # Exclude specific rules
+        editai custom-rules docs/guide.md rules/ --exclude-rules deprecated_terms
+
+        # Preview rule application without making changes
+        editai custom-rules docs/guide.md rules/ --dry-run
+
+        # Process all files in a directory recursively
+        editai custom-rules docs/ rules/ --recursive
+
+        # Process specific files in a directory
+        editai custom-rules docs/ rules/ --include-pattern "*.md" --exclude-patterns "drafts/*"
     """
     path_obj = Path(path)
     rules_dir_obj = Path(rules_directory)
@@ -348,7 +448,16 @@ def custom_rules(
 
 @app.command()
 def list_rules(rules_directory: str):
-    """List all available rules in the directory."""
+    """
+    List all available rules in the directory.
+
+    Examples:
+        # List all rules in the default rules directory
+        editai list-rules rules/
+
+        # List rules in a custom directory
+        editai list-rules custom-rules/
+    """
     rules_dir_obj = Path(rules_directory)
 
     if not rules_dir_obj.exists() or not rules_dir_obj.is_dir():
@@ -368,7 +477,16 @@ def list_rules(rules_directory: str):
 
 @app.command()
 def view_rule(rules_directory: str, rule_name: str):
-    """Display the content of a specific rule."""
+    """
+    Display the content of a specific rule.
+
+    Examples:
+        # View a specific rule by name (with or without .md extension)
+        editai view-rule rules/ passive_voice
+
+        # View a rule in a custom directory
+        editai view-rule custom-rules/ bullet_consistency.md
+    """
     rules_dir_obj = Path(rules_directory)
 
     if not rule_name.endswith(".md"):
@@ -392,7 +510,19 @@ def view_rule(rules_directory: str, rule_name: str):
 
 @app.command()
 def create_rule(rules_directory: str, rule_name: str):
-    """Create a new empty rule file."""
+    """
+    Create a new empty rule file with a template.
+
+    The created rule will include a basic structure with examples
+    of common rule types that you can customize.
+
+    Examples:
+        # Create a new rule in the default rules directory
+        editai create-rule rules/ passive_voice
+
+        # Create a rule in a custom directory (extension optional)
+        editai create-rule custom-rules/ bullet_consistency.md
+    """
     rules_dir_obj = Path(rules_directory)
 
     if not rules_dir_obj.exists():
@@ -437,7 +567,39 @@ def edit(
     include_pattern: Optional[str] = typer.Option(None, "--include"),
     exclude_patterns: Optional[List[str]] = typer.Option(None, "--exclude-patterns")
 ):
-    """Run all configured editors on files"""
+    """
+    Run multiple editors on files in one operation.
+
+    The edit command allows you to run any combination of editors
+    (ai, vale, custom_rules, images, links) on your files, either
+    in parallel (default) or sequentially.
+
+    Configuration is loaded from either:
+    1. The file specified with --config
+    2. ./editai.yaml in the current directory
+    3. ~/.config/editai/config.yaml
+
+    CLI arguments override configuration file settings.
+
+    Examples:
+        # Run all editors on a markdown file
+        editai edit README.md
+
+        # Run specific editors on files in a directory
+        editai edit docs/ --editors ai,vale,links --recursive
+
+        # Run all editors except one
+        editai edit docs/ --exclude custom_rules
+
+        # Use a specific configuration file
+        editai edit src/ --config ./custom-config.yaml
+
+        # Run editors sequentially instead of in parallel
+        editai edit docs/ --sequential
+
+        # Preview changes without making modifications
+        editai edit docs/ --dry-run
+    """
 
     # Load configuration
     config_path = config or find_config_file()
@@ -626,7 +788,22 @@ app.add_typer(config_app, name="config")
 def init_config(
     path: Path = typer.Option(Path.cwd() / "editai.yaml", help="Configuration file path")
 ):
-    """Create a default configuration file"""
+    """
+    Create a default configuration file with examples of all settings.
+
+    The configuration file contains settings for all editors and
+    global options. You can edit this file to customize default behavior.
+
+    Examples:
+        # Create configuration in the current directory (default)
+        editai config init
+
+        # Create configuration at a specific path
+        editai config init --path ~/projects/docs/editai.yaml
+
+        # Create in the default location for system-wide configuration
+        editai config init --path ~/.config/editai/config.yaml
+    """
 
     if path.exists():
         if not typer.confirm(f"Configuration file already exists at {path}. Overwrite?"):
@@ -639,7 +816,19 @@ def init_config(
 def show_config(
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file")
 ):
-    """Display current configuration"""
+    """
+    Display the current configuration settings.
+
+    Shows the contents of the configuration file that would be used
+    by the edit command. This is useful for verifying your settings.
+
+    Examples:
+        # Show configuration from the default location
+        editai config show
+
+        # Show configuration from a specific file
+        editai config show --config custom-editai.yaml
+    """
 
     config_path = config or find_config_file()
     if not config_path:
@@ -656,7 +845,20 @@ def show_config(
 def validate_config(
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file")
 ):
-    """Validate configuration file"""
+    """
+    Check if the configuration file is valid.
+
+    Validates that the configuration file contains valid YAML and
+    that all settings are correctly formatted. Use this after
+    editing your configuration to check for syntax errors.
+
+    Examples:
+        # Validate the default configuration file
+        editai config validate
+
+        # Validate a specific configuration file
+        editai config validate --config custom-editai.yaml
+    """
 
     config_path = config or find_config_file()
     if not config_path:
