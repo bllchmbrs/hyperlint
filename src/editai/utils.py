@@ -255,27 +255,27 @@ def find_markdown_files(
 
 
 def process_files_in_directory(
-    directory_path: Path, 
-    processor_func: Callable[[Path], str], 
+    directory_path: Path,
+    processor_func: Callable[[Path], str],
     include_pattern: str = "*.md",
     exclude_patterns: List[str] = None,
     dry_run: bool = False
 ) -> Dict[Path, str]:
     """
     Process all matching files in a directory using the provided processor function.
-    
+
     Args:
         directory_path: The path to the directory containing files to process.
         processor_func: A function that takes a file path and returns the processed content.
         include_pattern: Glob pattern for files to include (default is "*.md").
         exclude_patterns: List of glob patterns for files to exclude.
         dry_run: If True, files won't be modified, only return the processed content.
-        
+
     Returns:
         A dictionary mapping file paths to their processed content.
     """
     files = find_markdown_files(directory_path, include_pattern, exclude_patterns)
-    
+
     # Process each file
     results = {}
     for file_path in files:
@@ -283,7 +283,7 @@ def process_files_in_directory(
             # Process the file
             processed_content = processor_func(file_path)
             results[file_path] = processed_content
-            
+
             # Write the processed content back to the file if not in dry run mode
             if not dry_run and processed_content:
                 with open(file_path, 'w') as f:
@@ -292,5 +292,27 @@ def process_files_in_directory(
             # Log the error and continue with the next file
             from loguru import logger
             logger.error(f"Error processing file {file_path}: {e}")
-    
+
     return results
+
+
+def guess_image_folder(file_path: Path) -> Path:
+    """Try to find the image folder for a given file"""
+
+    if file_path.is_dir():
+        # Check for common image directory names
+        for img_dir in ['images', 'assets', 'img', 'pictures']:
+            candidate = file_path / img_dir
+            if candidate.exists():
+                return candidate
+        # Default to creating images directory
+        return file_path / 'images'
+    else:
+        # For single files, look in parent directory
+        parent = file_path.parent
+        for img_dir in ['images', 'assets', 'img', 'pictures']:
+            candidate = parent / img_dir
+            if candidate.exists():
+                return candidate
+        # Default to creating images directory in parent
+        return parent / 'images'

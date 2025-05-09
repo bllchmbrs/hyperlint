@@ -15,6 +15,8 @@ EditAI provides various specialized editors for enhancing Markdown documentation
 
 Each editor can process either single files or entire directories of markdown files.
 
+With the new `edit` command, you can run multiple editors in a single operation, either in parallel or sequentially. The tool also supports a flexible YAML configuration system to customize all aspects of its behavior.
+
 ## Installation
 
 ```bash
@@ -129,6 +131,29 @@ python -m editai.cli create-rule ./rules/ my_new_rule
 ## Examples
 
 Check the `examples/` directory for example files and usage scenarios.
+
+## Configuration System
+
+EditAI supports a flexible YAML configuration system:
+
+```bash
+# Create a default configuration file
+python -m editai.cli config init
+
+# Run the 'edit' command with all configured editors
+python -m editai.cli edit ./docs/
+
+# Run specific editors only
+python -m editai.cli edit ./docs/ --editors ai,vale
+
+# Exclude specific editors
+python -m editai.cli edit ./docs/ --exclude custom_rules,images
+
+# Run editors sequentially instead of in parallel
+python -m editai.cli edit ./docs/ --sequential
+```
+
+See the [configuration documentation](docs/configuration.md) for full details on the configuration system.
 
 ## License
 

@@ -1,6 +1,8 @@
 from pathlib import Path
 import os
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 
 import typer
 from loguru import logger
@@ -14,7 +16,8 @@ from .editors.folder_processor import FolderProcessor
 from .editors.images import ImageAdditionEditor
 from .editors.links import InternalLinkEditor
 from .editors.vale import ValeEditor
-from .utils import get_vale_config_path
+from .utils import get_vale_config_path, guess_image_folder
+from .config import SimpleConfig, find_config_file, create_default_config
 
 app = typer.Typer()
 
@@ -420,6 +423,252 @@ Example:
     except Exception as e:
         print(f"Error creating rule: {e}")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def edit(
+    path: str,
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file"),
+    editors: Optional[List[str]] = typer.Option(None, "--editors", help="Comma-separated list of editors to run"),
+    exclude_editors: Optional[List[str]] = typer.Option(None, "--exclude", help="Comma-separated list of editors to exclude"),
+    recursive: Optional[bool] = typer.Option(None, "--recursive/--no-recursive"),
+    dry_run: Optional[bool] = typer.Option(None, "--dry-run/--no-dry-run"),
+    parallel: Optional[bool] = typer.Option(True, "--parallel/--sequential", help="Run editors in parallel"),
+    include_pattern: Optional[str] = typer.Option(None, "--include"),
+    exclude_patterns: Optional[List[str]] = typer.Option(None, "--exclude-patterns")
+):
+    """Run all configured editors on files"""
+
+    # Load configuration
+    config_path = config or find_config_file()
+    if config_path:
+        logger.info(f"Loading configuration from {config_path}")
+        config_obj = SimpleConfig.from_yaml(config_path)
+    else:
+        logger.info("No configuration file found, using defaults")
+        config_obj = SimpleConfig()
+
+    # Process editor selection
+    all_editors = ['ai', 'vale', 'custom_rules', 'images', 'links']
+
+    if editors:
+        selected_editors = [e.strip() for e in editors[0].split(',') if e.strip()]
+    else:
+        selected_editors = all_editors
+
+    if exclude_editors:
+        excluded = [e.strip() for e in exclude_editors[0].split(',') if e.strip()]
+        selected_editors = [e for e in selected_editors if e not in excluded]
+
+    # Merge CLI args with config
+    cli_args = {
+        'recursive': recursive,
+        'dry_run': dry_run,
+        'include_pattern': include_pattern,
+        'exclude_patterns': exclude_patterns
+    }
+    merged_config = config_obj.merge_with_cli(cli_args)
+
+    # Run editors
+    path_obj = Path(path)
+    results = {}
+
+    if parallel:
+        # Run editors in parallel
+        results = run_editors_parallel(path_obj, selected_editors, config_obj, merged_config)
+    else:
+        # Run editors sequentially
+        results = run_editors_sequential(path_obj, selected_editors, config_obj, merged_config)
+
+    # Print summary
+    print_summary(results)
+
+
+def run_editors_sequential(
+    path: Path,
+    editors: List[str],
+    config: SimpleConfig,
+    merged_config: Dict
+) -> Dict[str, Any]:
+    """Run editors one after another"""
+    results = {}
+
+    for editor_name in editors:
+        try:
+            result = run_single_editor(editor_name, path, config, merged_config)
+            results[editor_name] = result
+            logger.success(f"Completed {editor_name} editor")
+        except Exception as e:
+            logger.error(f"Error running {editor_name}: {e}")
+            results[editor_name] = {"error": str(e)}
+
+    return results
+
+
+def run_editors_parallel(
+    path: Path,
+    editors: List[str],
+    config: SimpleConfig,
+    merged_config: Dict
+) -> Dict[str, Any]:
+    """Run editors in parallel"""
+    results = {}
+
+    with ThreadPoolExecutor(max_workers=len(editors)) as executor:
+        future_to_editor = {
+            executor.submit(run_single_editor, name, path, config, merged_config): name
+            for name in editors
+        }
+
+        for future in concurrent.futures.as_completed(future_to_editor):
+            editor_name = future_to_editor[future]
+            try:
+                result = future.result()
+                results[editor_name] = result
+                logger.success(f"Completed {editor_name} editor")
+            except Exception as e:
+                logger.error(f"Error running {editor_name}: {e}")
+                results[editor_name] = {"error": str(e)}
+
+    return results
+
+
+def run_single_editor(
+    editor_name: str,
+    path: Path,
+    config: SimpleConfig,
+    merged_config: Dict
+) -> Dict[str, Any]:
+    """Run a single editor with given configuration"""
+
+    # Get editor-specific config
+    editor_config = config.get_editor_config(editor_name)
+
+    # Map editor names to classes
+    editor_mapping = {
+        'ai': AIEditor,
+        'vale': ValeEditor,
+        'custom_rules': CustomRuleEditor,
+        'images': ImageAdditionEditor,
+        'links': InternalLinkEditor
+    }
+
+    editor_class = editor_mapping.get(editor_name)
+    if not editor_class:
+        raise ValueError(f"Unknown editor: {editor_name}")
+
+    # Create editor with configuration
+    editor_kwargs = editor_config.copy()
+
+    # Handle special cases
+    if editor_name == 'custom_rules':
+        editor_kwargs['rules_directory'] = Path(editor_config.get('rules_directory', './rules'))
+        editor_kwargs['include_rules'] = editor_config.get('enabled_rules', [])
+        editor_kwargs['exclude_rules'] = editor_config.get('disabled_rules', [])
+
+    if editor_name == 'images':
+        editor_kwargs['image_folder_path'] = guess_image_folder(path)
+        editor_kwargs['image_url_prefix'] = editor_config.get('default_url_prefix', '/images')
+
+    if editor_name == 'vale':
+        editor_kwargs['vale_config_path'] = Path(editor_config.get('config_path', './.vale.ini'))
+
+    if editor_name == 'links':
+        editor_kwargs['indexes'] = editor_config.get('default_indices', [])
+
+    # Process files
+    if path.is_dir() and merged_config.get('recursive', True):
+        processor = FolderProcessor(
+            directory_path=path,
+            editor_class=editor_class,
+            editor_kwargs=editor_kwargs,
+            include_pattern=merged_config.get('include_pattern', '*.md'),
+            exclude_patterns=merged_config.get('exclude_patterns', []),
+            recursive=True
+        )
+        file_results = processor.process_directory(dry_run=merged_config.get('dry_run', False))
+        return {"files_processed": len(file_results), "results": file_results}
+    else:
+        # Single file processing
+        editor = editor_class(path=path, **editor_kwargs)
+        result = editor.generate_v2()
+
+        if not merged_config.get('dry_run', False):
+            with open(path, 'w') as f:
+                f.write(result)
+
+        return {"file": str(path), "modified": not merged_config.get('dry_run', False)}
+
+
+def print_summary(results: Dict[str, Any]):
+    """Print summary of editor results"""
+    typer.echo("\n" + "="*50)
+    typer.echo("EditAI Summary")
+    typer.echo("="*50)
+
+    for editor_name, result in results.items():
+        typer.echo(f"\n{editor_name.upper()} Editor:")
+        if "error" in result:
+            typer.echo(f"  ❌ Error: {result['error']}", err=True)
+        elif "files_processed" in result:
+            typer.echo(f"  ✅ Processed {result['files_processed']} files")
+        else:
+            typer.echo(f"  ✅ Processed {result.get('file', 'file')}")
+
+    typer.echo("\n" + "="*50)
+
+
+# Add config subcommand for managing configurations
+config_app = typer.Typer()
+app.add_typer(config_app, name="config")
+
+@config_app.command("init")
+def init_config(
+    path: Path = typer.Option(Path.cwd() / "editai.yaml", help="Configuration file path")
+):
+    """Create a default configuration file"""
+
+    if path.exists():
+        if not typer.confirm(f"Configuration file already exists at {path}. Overwrite?"):
+            raise typer.Abort()
+
+    created_path = create_default_config(path)
+    typer.echo(f"Configuration created at {created_path}")
+
+@config_app.command("show")
+def show_config(
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file")
+):
+    """Display current configuration"""
+
+    config_path = config or find_config_file()
+    if not config_path:
+        typer.echo("No configuration file found")
+        raise typer.Exit(1)
+
+    with open(config_path, 'r') as f:
+        content = f.read()
+
+    typer.echo(f"Configuration from {config_path}:\n")
+    typer.echo(content)
+
+@config_app.command("validate")
+def validate_config(
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file")
+):
+    """Validate configuration file"""
+
+    config_path = config or find_config_file()
+    if not config_path:
+        typer.echo("No configuration file found")
+        raise typer.Exit(1)
+
+    try:
+        SimpleConfig.from_yaml(config_path)
+        typer.echo("Configuration is valid ✅")
+    except Exception as e:
+        typer.echo(f"Configuration error: {e} ❌")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

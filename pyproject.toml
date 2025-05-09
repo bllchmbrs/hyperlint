@@ -12,6 +12,7 @@ dependencies = [
     "smolcrawl>=0.1.7",
     "spacy>=3.8.5",
     "typer>=0.15.2",
+    "pyyaml>=6.0.1",
 ]
 
 [project.optional-dependencies]
