@@ -12,3 +12,4 @@ wheels/
 smolcrawl-data/
 data/
 storage/
+**/.claude/settings.local.json
