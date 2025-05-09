@@ -1,7 +1,8 @@
 import os
 import re
 from collections import Counter
-from typing import Dict, List, Optional, Union
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Callable, Set
 
 import spacy
 
@@ -213,3 +214,83 @@ def count_adjectives(
 
 def get_vale_config_path() -> str | None:
     return os.getenv("VALE_CONFIG_PATH")
+
+
+def find_markdown_files(
+    directory_path: Path, 
+    include_pattern: str = "*.md", 
+    exclude_patterns: List[str] = None
+) -> List[Path]:
+    """
+    Find markdown files in a directory (and its subdirectories) that match the include pattern
+    and don't match any of the exclude patterns.
+
+    Args:
+        directory_path: The path to the directory to search in.
+        include_pattern: Glob pattern for files to include (default is "*.md").
+        exclude_patterns: List of glob patterns for files to exclude.
+
+    Returns:
+        A list of file paths matching the criteria.
+    """
+    exclude_patterns = exclude_patterns or []
+    
+    # Ensure the directory exists
+    if not directory_path.exists() or not directory_path.is_dir():
+        raise ValueError(f"Directory does not exist or is not a directory: {directory_path}")
+    
+    # Find all files matching the include pattern
+    all_files = list(directory_path.glob(f"**/{include_pattern}"))
+    
+    # Apply exclude patterns
+    if exclude_patterns:
+        excluded_files: Set[Path] = set()
+        for pattern in exclude_patterns:
+            excluded_files.update(directory_path.glob(f"**/{pattern}"))
+        
+        # Filter out excluded files
+        return [f for f in all_files if f not in excluded_files]
+    
+    return all_files
+
+
+def process_files_in_directory(
+    directory_path: Path, 
+    processor_func: Callable[[Path], str], 
+    include_pattern: str = "*.md",
+    exclude_patterns: List[str] = None,
+    dry_run: bool = False
+) -> Dict[Path, str]:
+    """
+    Process all matching files in a directory using the provided processor function.
+    
+    Args:
+        directory_path: The path to the directory containing files to process.
+        processor_func: A function that takes a file path and returns the processed content.
+        include_pattern: Glob pattern for files to include (default is "*.md").
+        exclude_patterns: List of glob patterns for files to exclude.
+        dry_run: If True, files won't be modified, only return the processed content.
+        
+    Returns:
+        A dictionary mapping file paths to their processed content.
+    """
+    files = find_markdown_files(directory_path, include_pattern, exclude_patterns)
+    
+    # Process each file
+    results = {}
+    for file_path in files:
+        try:
+            # Process the file
+            processed_content = processor_func(file_path)
+            results[file_path] = processed_content
+            
+            # Write the processed content back to the file if not in dry run mode
+            if not dry_run and processed_content:
+                with open(file_path, 'w') as f:
+                    f.write(processed_content)
+        except Exception as e:
+            # Log the error and continue with the next file
+            from loguru import logger
+            logger.error(f"Error processing file {file_path}: {e}")
+    
+    return results

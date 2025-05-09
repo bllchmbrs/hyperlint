@@ -13,3 +13,5 @@ smolcrawl-data/
 data/
 storage/
 **/.claude/settings.local.json
+CLAUDE.md
+plans/

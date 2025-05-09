@@ -1,0 +1,2179 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+src/
+  tutedit/
+    editors/
+      __init__.py
+      ai.py
+      arbitrary_links.py
+      core.py
+      images.py
+      links.py
+      utils.py
+      vale.py
+    __init__.py
+    cli.py
+    py.typed
+    utils.py
+.gitignore
+.python-version
+main.py
+pyproject.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/tutedit/editors/arbitrary_links.py">
+from typing import List, Optional
+
+import diskcache
+import instructor
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field, HttpUrl
+
+from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
+
+cache = diskcache.Cache("./data/cache/editing")
+patched_client = instructor.from_litellm(completion=completion)
+
+
+class ArbitraryLink(BaseModel):
+    """A link to be inserted into the text."""
+
+    url: HttpUrl = Field(description="The URL to link to")
+    description: str = Field(description="Description of what this link points to")
+
+
+class LinkPlacement(BaseModel):
+    """A suggested placement for a link in the text."""
+
+    line_number: int = Field(
+        description="The line number where the link should be placed"
+    )
+    original_text: str = Field(description="The original line text")
+    reasoning: str = Field(description="Reasoning for why this is a good placement")
+
+
+class LinkRewrite(BaseModel):
+    """A rewritten line with a link inserted."""
+
+    rewritten_text: str = Field(
+        description="The line rewritten to include the link in a natural way"
+    )
+
+
+class ArbitraryLinkEditor(BaseEditor):
+    """Editor for interactively inserting arbitrary links provided by the user."""
+
+    def prerun_checks(self) -> bool:
+        # No specific pre-run checks needed
+        return True
+
+    def collect_issues(self) -> None:
+        """Run the REPL to collect links and find placements."""
+        self.run_link_repl()
+
+    def run_link_repl(self) -> None:
+        """Run the interactive REPL for entering links."""
+        print("=== Arbitrary Link Editor REPL ===")
+        print("Enter links to add to your document. Type 'exit' to finish.")
+
+        text_with_line_numbers = self.get_text_with_line_numbers()
+        line_lookup = self.get_line_number_lookup()
+
+        while True:
+            # Get user input for link
+            link_url = input("\nEnter link URL (or 'exit' to finish): ")
+            if link_url.lower() == "exit":
+                break
+
+            # Get description
+            description = input("Enter link description: ")
+
+            try:
+                # Create link object
+                link = ArbitraryLink(url=link_url, description=description)
+
+                # Find placement for the link
+                placement = self.find_link_placement(link, text_with_line_numbers)
+
+                if placement and placement.line_number in line_lookup:
+                    # Show placement to user
+                    print(f"\nSuggested placement at line {placement.line_number}:")
+                    print(f"Original: {placement.original_text}")
+                    print(f"Reasoning: {placement.reasoning}")
+
+                    # Confirm with user
+                    confirm = input("Apply this link placement? (y/n): ")
+                    if confirm.lower() == "y":
+                        # Create a replacement issue
+                        self.add_replacement_for_link(link, placement, line_lookup)
+                        print("Link placement added.")
+                    else:
+                        print("Link placement skipped.")
+                else:
+                    print("No suitable placement found for this link.")
+            except Exception as e:
+                logger.error(f"Error processing link: {e}")
+                print(f"Error: {e}")
+
+    def find_link_placement(
+        self, link: ArbitraryLink, text_with_line_numbers: str
+    ) -> Optional[LinkPlacement]:
+        """Find the best placement for a link in the document."""
+        prompt = f"""You are an expert technical writer.
+        
+        You are given a link URL and description, and text with line numbers.
+        
+        Your job is to find the best location in the text to place this link naturally.
+        
+        <text_with_line_numbers>
+        {text_with_line_numbers}
+        </text_with_line_numbers>
+        
+        <link>
+        URL: {link.url}
+        Description: {link.description}
+        </link>
+        
+        Find the single best line where this link would be most relevant and helpful.
+        The link should enhance the reader's understanding and be placed naturally in the text.
+        You must only point to lines of text, not code lines or empty lines.
+        NEVER MODIFY CODE LINES.
+        
+        Return your response as a JSON with the following structure:
+        {{
+          "line_number": The line number to place the link (as an integer),
+          "original_text": "The original text of that line",
+          "reasoning": "Why this is a good placement for the link"
+        }}
+        """
+
+        # Use AI to find placement
+        try:
+            response = patched_client.chat.completions.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=1000,
+                temperature=0.25,
+                messages=[{"role": "user", "content": prompt}],
+                response_model=LinkPlacement,
+            )
+            # Ensure line_number is an integer
+            if isinstance(response.line_number, str):
+                try:
+                    response.line_number = int(response.line_number)
+                except ValueError:
+                    logger.error(
+                        f"Invalid line number returned: {response.line_number}"
+                    )
+                    return None
+
+            logger.info(f"Found link placement at line {response.line_number}")
+            return response
+        except Exception as e:
+            logger.exception("Error finding link placement", error=e)
+            return None
+
+    def add_replacement_for_link(
+        self, link: ArbitraryLink, placement: LinkPlacement, line_lookup: dict
+    ) -> None:
+        """Create a replacement issue for the link placement."""
+        # Generate replacement text with link inserted
+        rewritten_text = self.generate_link_insertion(link, placement.original_text)
+
+        # Create ReplaceLineFixableIssue with custom rewritten text
+        issue = ReplaceLineFixableIssue(
+            line=placement.line_number,
+            issue_message=[
+                f"Insert link to {link.url} described as: {link.description}"
+            ],
+            existing_content=placement.original_text,
+        )
+
+        # Override the fix method to return our rewritten text directly
+        original_fix = issue.fix
+        issue.fix = lambda: rewritten_text
+
+        self.add_replacement(issue)
+        logger.success(f"Added replacement for line {placement.line_number}")
+
+    @cache.memoize()
+    def generate_link_insertion(self, link: ArbitraryLink, original_text: str) -> str:
+        """Generate a rewritten line with the link naturally inserted."""
+        prompt = f"""You are an expert technical writer.
+        
+        You need to rewrite this line to naturally include a link in Markdown format.
+        
+        <original_line>
+        {original_text}
+        </original_line>
+        
+        <link>
+        URL: {link.url}
+        Description: {link.description}
+        </link>
+        
+        Rewrite the line to include the link in a natural way. Use Markdown format for the link: [text](url).
+        The link should be seamlessly integrated into the text.
+        Return only the rewritten line without any explanation.
+        """
+
+        try:
+            response = patched_client.chat.completions.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=500,
+                temperature=0.25,
+                messages=[{"role": "user", "content": prompt}],
+                response_model=LinkRewrite,
+            )
+            return response.rewritten_text
+        except Exception as e:
+            logger.exception("Error generating link insertion", error=e)
+            return original_text
+</file>
+
+<file path="src/tutedit/py.typed">
+
+</file>
+
+<file path="src/tutedit/editors/__init__.py">
+from .ai import AIEditor
+from .arbitrary_links import ArbitraryLinkEditor
+from .core import BaseEditor
+from .images import ImageAdditionEditor
+from .links import InternalLinkEditor
+from .vale import ValeEditor
+</file>
+
+<file path="src/tutedit/editors/utils.py">
+import re
+from typing import List
+
+import instructor
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field
+
+patched_client = instructor.from_litellm(completion=completion)
+
+
+class SearchTerms(BaseModel):
+    search_terms: List[str] = Field(
+        description="A list of up to 12 search terms wrapped in <search_terms> tags and separated by commas."
+    )
+
+
+def get_search_terms(text: str) -> List[str]:
+    logger.info("Getting search terms for text", text=text)
+    prompt = f"""
+    Extract up to 12 key search terms from the following text. Return a list of up to 12 search terms wrapped in <search_terms> tags and separated by commas.
+
+    <text>
+    {text}
+    </text>
+
+    Return a list of up to 5 search terms wrapped in <search_terms> tags and separated by commas.
+
+    <example>
+    This is a technical blog post or tutorial, so focus on the more technical tools, concepts, and terms that we should link to and search for.
+
+    For instance, if the code includes 
+    ```python
+    from mcp.server.fastmcp import FastMCP
+    ````
+
+    Then good search terms would be "FastMCP" and "MCP Server". 
+    </example>
+    
+    Rules:
+    - Focus in particular on the names from the imported lobraries and their names.
+    - Don't include concepts that aren't related to the technical content of the text. For instance, if the demo is about whales, don't include "whales" in the search terms.
+    - Focus on the terms related to the libraries used. For instances, the imported classes, functions names, etc.
+    - Do not use search terms that seem specific to the demo, but rather focus on the libraries used.
+
+    First use a <thinking> block to think about the best search terms. Then return your response wrapped in <search_terms> tags.
+    """
+    response = patched_client.messages.create(
+        model="anthropic/claude-3-haiku-20240307",
+        max_tokens=800,
+        temperature=0.25,
+        messages=[{"role": "user", "content": prompt}],
+        response_model=SearchTerms,
+    )
+    return response.search_terms
+</file>
+
+<file path="src/tutedit/__init__.py">
+from dotenv import load_dotenv
+
+load_dotenv()
+</file>
+
+<file path="src/tutedit/cli.py">
+from pathlib import Path
+from typing import List
+
+import typer
+from smolcrawl import list_indices as list_indices_from_smolcrawl
+
+from .editors.ai import AIEditor
+from .editors.arbitrary_links import ArbitraryLinkEditor
+from .editors.images import ImageAdditionEditor
+from .editors.links import InternalLinkEditor
+from .editors.vale import ValeEditor
+from .utils import get_vale_config_path
+
+app = typer.Typer()
+
+
+@app.command()
+def vale(path: str, vale_config_path: str | None = None):
+    path_obj = Path(path)
+    vale_config_path_final: Path
+    if vale_config_path is None:
+        maybe_path = get_vale_config_path()
+        if maybe_path is None:
+            print("Error: Vale config path could not be determined.")
+            raise typer.Exit(code=1)
+        vale_config_path_final = maybe_path
+    else:
+        vale_config_path_final = Path(vale_config_path)
+
+    editor = ValeEditor(path=path_obj, vale_config_path=vale_config_path_final)
+    print(editor.generate_v2())
+
+
+@app.command()
+def list_indices():
+    list_indices_from_smolcrawl()
+
+
+@app.command()
+def links(path: str, local_index_names: List[str] = [], websearch: bool = False):
+    path_obj = Path(path)
+    if len(local_index_names) == 1:
+        local_index_names = local_index_names[0].split(",")
+    editor = InternalLinkEditor(path=path_obj, indexes=local_index_names)
+    print(editor.generate_v2())
+
+
+@app.command()
+def add_images(
+    path: str,
+    image_folder_path: str,
+    image_url_prefix: str = "/images",
+):
+    """Adds images found in image_folder_path to the document at path."""
+    path_obj = Path(path)
+    image_folder_path_obj = Path(image_folder_path)
+
+    editor = ImageAdditionEditor(
+        path=path_obj,
+        image_folder_path=image_folder_path_obj,
+        image_url_prefix=image_url_prefix,
+    )
+    print(editor.generate_v2())
+
+
+@app.command()
+def ai(path: str):
+    path_obj = Path(path)
+    editor = AIEditor(path=path_obj)
+    print(editor.generate_v2())
+
+
+@app.command()
+def arbitrary_links(path: str):
+    """
+    Interactive REPL to add arbitrary links to a document.
+    Prompts for URLs and descriptions, then finds the best placement for each link.
+    """
+    path_obj = Path(path)
+    editor = ArbitraryLinkEditor(path=path_obj)
+    print(editor.generate_v2())
+
+
+if __name__ == "__main__":
+    app()
+</file>
+
+<file path="src/tutedit/utils.py">
+import os
+import re
+from collections import Counter
+from typing import Dict, List, Optional, Union
+
+import spacy
+
+
+def get_word_counts(text: str) -> list[tuple[str, int]]:
+    words = text.lower().split()
+    return Counter(words).most_common(20)
+
+
+def remove_code_blocks(text: str) -> str:
+    """Removes code blocks from a string.
+
+    Args:
+        text: The input string.
+
+    Returns:
+        The string with code blocks removed.
+    """
+    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+
+
+def remove_inline_code(text: str) -> str:
+    """Removes inline code snippets from a string.
+
+    Args:
+        text: The input string.
+
+    Returns:
+        The string with inline code removed.
+    """
+    return re.sub(r"`[^`]*`", "", text)
+
+
+def get_sentences(text: str) -> list[str]:
+    """
+    Returns a list of sentences from the given text.
+    """
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+    return [sentence.text for sentence in doc.sents]
+
+
+def calculate_sentence_lengths(text: str) -> list[int]:
+    """
+    Calculates the length of each sentence in the given text.
+
+    Args:
+        text: The input text.
+
+    Returns:
+        A list of sentence lengths.
+    """
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+    return [len(sentence) for sentence in doc.sents]
+
+
+def get_sentence_length_stats(text: str) -> dict[str, float]:
+    """
+    Calculates the min, max, average, and median sentence length of the given text.
+
+    Args:
+        text: The input text.
+
+    Returns:
+        A dictionary containing the min, max, average, and median sentence lengths.
+    """
+    text = remove_code_blocks(text)
+    text = remove_inline_code(text)
+    sentence_lengths = calculate_sentence_lengths(text)
+    if not sentence_lengths:
+        return {
+            "min": 0.0,
+            "max": 0.0,
+            "average": 0.0,
+            "median": 0.0,
+        }
+    min_length = min(sentence_lengths)
+    max_length = max(sentence_lengths)
+    average_length = sum(sentence_lengths) / len(sentence_lengths)
+    sorted_lengths = sorted(sentence_lengths)
+    median_length = (
+        sorted_lengths[len(sorted_lengths) // 2]
+        if len(sorted_lengths) % 2 != 0
+        else (
+            sorted_lengths[len(sorted_lengths) // 2 - 1]
+            + sorted_lengths[len(sorted_lengths) // 2]
+        )
+        / 2
+    )
+    return {
+        "min": float(min_length),
+        "max": float(max_length),
+        "average": average_length,
+        "median": median_length,
+    }
+
+
+def count_words(
+    text: str,
+    exclude_stopwords: bool = True,
+    exclude_punctuation: bool = True,
+    exclude_digits: bool = False,
+    min_word_length: int = 1,
+    language_model: str = "en_core_web_sm",
+) -> Dict[str, int]:
+    """
+    Count words in text, with options to filter out stopwords and other elements.
+
+    Args:
+        text: The input text to analyze
+        exclude_stopwords: Whether to exclude common stopwords
+        exclude_punctuation: Whether to exclude punctuation
+        exclude_digits: Whether to exclude words containing digits
+        min_word_length: Minimum word length to include in counts
+        language_model: spaCy language model to use
+
+    Returns:
+        Dictionary with words as keys and their counts as values
+    """
+    # Remove code blocks
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    # Remove newlines and backticks
+    text = text.replace("\n", "").replace("`", "")
+
+    # Load spaCy model
+    nlp = spacy.load(language_model)
+
+    # Process the text
+    doc = nlp(text)
+
+    # Filter words based on parameters
+    filtered_words = []
+    for token in doc:
+        # Convert to lowercase
+        word = token.text.lower()
+
+        # Apply filters
+        if exclude_stopwords and token.is_stop:
+            continue
+        if exclude_punctuation and token.is_punct:
+            continue
+        if exclude_digits and token.like_num:
+            continue
+        if len(word) < min_word_length:
+            continue
+
+        filtered_words.append(word)
+
+    # Count word frequencies
+    return dict(Counter(filtered_words).most_common(20))
+
+
+def count_adjectives(
+    text: str,
+    exclude_stopwords: bool = True,
+    exclude_punctuation: bool = True,
+    exclude_digits: bool = False,
+    min_word_length: int = 1,
+    language_model: str = "en_core_web_sm",
+) -> Dict[str, int]:
+    """
+    Count adjectives in text, with options to filter out stopwords and other elements.
+
+    Args:
+        text: The input text to analyze
+        exclude_stopwords: Whether to exclude common stopwords
+        exclude_punctuation: Whether to exclude punctuation
+        exclude_digits: Whether to exclude words containing digits
+        min_word_length: Minimum word length to include in counts
+        language_model: spaCy language model to use
+
+    Returns:
+        Dictionary with adjectives as keys and their counts as values
+    """
+    text = remove_code_blocks(text)
+    text = remove_inline_code(text)
+
+    # Load spaCy model
+    nlp = spacy.load(language_model)
+
+    # Process the text
+    doc = nlp(text)
+
+    # Filter adjectives based on parameters
+    filtered_adjectives = []
+    for token in doc:
+        # Apply filters
+
+        if token.pos_ != "ADJ":
+            continue
+
+        word = token.text.lower()
+
+        if exclude_stopwords and token.is_stop:
+            continue
+        if exclude_punctuation and token.is_punct:
+            continue
+        if exclude_digits and token.like_num:
+            continue
+        if len(word) < min_word_length:
+            continue
+
+        filtered_adjectives.append(word)
+
+    # Count adjective frequencies
+    return dict(Counter(filtered_adjectives).most_common(20))
+
+
+def get_vale_config_path() -> str | None:
+    return os.getenv("VALE_CONFIG_PATH")
+</file>
+
+<file path=".python-version">
+3.11
+</file>
+
+<file path="main.py">
+def main():
+    print("Hello from editor!")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "tutedit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "diskcache>=5.6.3",
+    "instructor>=1.7.9",
+    "litellm>=1.67.2",
+    "loguru>=0.7.3",
+    "smolcrawl>=0.1.7",
+    "spacy>=3.8.5",
+    "typer>=0.15.2",
+]
+
+[project.scripts]
+tutedit = "tutedit.cli:app"
+</file>
+
+<file path="src/tutedit/editors/ai.py">
+import os
+from typing import List, Literal, Optional
+
+import diskcache  # type: ignore
+import instructor
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field
+
+from .core import BaseEditor, DeleteLineIssue, InsertLineIssue
+
+# Constants
+# Use a separate cache directory for this editor
+cache = diskcache.Cache("./data/cache/ai_editor")
+patched_client = instructor.from_litellm(completion=completion)
+
+MODEL_NAME = os.getenv("AI_EDITOR_MODEL", "openai/o3-mini-2025-01-31")
+
+
+class LineEdit(BaseModel):
+    """Represents a single identified issue and proposed resolution for a range of lines."""
+
+    starting_affected_line: int = Field(
+        description="The 1-indexed starting line number of the text block with the issue."
+    )
+    ending_affected_line: int = Field(
+        description="The 1-indexed ending line number of the text block with the issue."
+    )
+    issue_message: str = Field(
+        description="A concise description of the identified issue (e.g., 'Inconsistent formatting', 'Redundant explanation', 'Awkward phrasing')."
+    )
+    resolution: Literal["edit", "delete", "flag"] = Field(
+        description=(
+            "The suggested resolution: 'edit' to modify the text, "
+            "'delete' to remove the text block, "
+            "'flag' to report the issue without automated changes (e.g., for complex errors or code blocks)."
+        )
+    )
+
+
+class LineEdits(BaseModel):
+    """A collection of line edits identified in the text."""
+
+    line_edits: List[LineEdit] = Field(
+        description="A list of identified issues and their proposed resolutions."
+    )
+
+
+class CorrectedText(BaseModel):
+    """Represents the corrected text block."""
+
+    corrected_text: str = Field(
+        description="The corrected version of the text block provided."
+    )
+
+
+def get_line_edits(text_with_line_numbers: str) -> LineEdits:
+    """Identifies potential issues in the text using an AI model.
+
+    Args:
+        text_with_line_numbers: The input text, with each line prefixed by its number.
+
+    Returns:
+        A LineEdits object containing the identified issues.
+    """
+    prompt = f"""You are an expert technical editor reviewing a document.
+
+    Your task is to identify sections of the text that could be improved for clarity, conciseness, consistency, or formatting. Focus on improving the flow and readability for a technical audience.
+
+    Here is the text with line numbers:
+    <text>
+    {text_with_line_numbers}
+    </text>
+
+    Identify issues and suggest a resolution for each:
+    - 'edit': If the text can be clearly improved (e.g., fixing typos, rephrasing awkward sentences, correcting minor formatting). Provide a concise 'issue_message'.
+    - 'delete': If a block of text (one or more lines) is redundant, unnecessary, or clearly erroneous and should be removed.
+    - 'flag': If there's a significant issue you can identify but cannot confidently fix (e.g., missing information, a potentially incorrect technical statement, complex formatting problems, issues within code blocks). Use 'flag' for anything inside ``` blocks.
+
+    Provide the starting and ending line number for each identified issue.
+    Ensure the line ranges are accurate and cover the entire relevant text block for the issue.
+
+    Return a list of identified issues and their resolutions.
+    """
+    try:
+        logger.info(f"Requesting line edits using model: {MODEL_NAME}")
+        response: LineEdits = patched_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            response_model=LineEdits,
+            max_tokens=2048,  # Allow for potentially many edits
+        )
+        logger.success(
+            f"Received {len(response.line_edits)} potential line edits from AI."
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error getting line edits from AI: {e}", exc_info=True)
+        # Return empty list on error
+        return LineEdits(line_edits=[])
+
+
+def fix_line_edit(line_edit: LineEdit, relevant_lines: str) -> Optional[str]:
+    """Generates corrected text for a given line edit using an AI model.
+
+    Args:
+        line_edit: The LineEdit object describing the issue.
+        relevant_lines: The specific lines of text affected by the edit.
+
+    Returns:
+        The corrected text block as a single string, or None if correction fails.
+    """
+    prompt = f"""You are an expert technical editor tasked with fixing an issue in a specific text block.
+
+    The identified issue is:
+    <issue_message>
+    {line_edit.issue_message}
+    </issue_message>
+
+    Here is the original text block (from line {line_edit.starting_affected_line} to {line_edit.ending_affected_line}):
+    <original_text>
+    {relevant_lines}
+    </original_text>
+
+    Your goal is to rewrite the original text block to resolve *only* the specified issue.
+    - Maintain the original meaning and intent unless the issue is about factual correctness.
+    - Preserve the original line breaks and indentation as much as possible, unless the issue is specifically about formatting.
+    - Ensure the corrected text seamlessly fits back into the surrounding document.
+    - ONLY return the corrected text block itself, without any extra explanations or formatting.
+
+    Return the corrected text block.
+    """
+    try:
+        logger.info(
+            f"Requesting fix for lines {line_edit.starting_affected_line}-{line_edit.ending_affected_line} using model: {MODEL_NAME}"
+        )
+        # Using CorrectedText response model for structure, although the prompt asks for raw text.
+        # This adds a layer of validation.
+        response: CorrectedText = patched_client.chat.completions.create(
+            model="anthropic/claude-3-haiku-20240307",
+            messages=[{"role": "user", "content": prompt}],
+            response_model=CorrectedText,
+            max_tokens=1024,  # Should be enough for typical block edits
+        )
+        logger.success(
+            f"Received corrected text for lines {line_edit.starting_affected_line}-{line_edit.ending_affected_line}."
+        )
+        return (
+            response.corrected_text.strip()
+        )  # Strip potential leading/trailing whitespace
+    except Exception as e:
+        logger.error(
+            f"Error fixing line edit for lines {line_edit.starting_affected_line}-{line_edit.ending_affected_line}: {e}",
+            exc_info=True,
+        )
+        return None  # Return None on error
+
+
+# TODO: Implement AIEditor class inheriting from BaseEditor
+class AIEditor(BaseEditor):
+    """
+    Editor that uses AI to identify and fix issues related to
+    clarity, conciseness, consistency, and formatting in text.
+    It can suggest edits, deletions, or flag issues for manual review.
+    """
+
+    def _fetch_line_edits(self) -> LineEdits:
+        """Fetches or retrieves cached line edits for the current text."""
+
+        logger.debug("Fetching line edits from AI...")
+        text_with_line_numbers = self.get_text_with_line_numbers()  # Use helper
+        # Use the configured model for detection
+        return get_line_edits(text_with_line_numbers)
+
+    def prerun_checks(self) -> bool:
+        """Basic checks before running the editor."""
+        # Could add checks for API keys if needed, but LiteLLM handles env vars
+        logger.success("AI Editor prerun checks passed.")
+        return True
+
+    def collect_issues(self) -> None:
+        """Collects issues identified by AI and translates them into insertions/deletions."""
+        line_edits_response = self._fetch_line_edits()
+        line_lookup = self.get_line_number_lookup()
+        processed_lines = set()  # Track lines involved in an operation
+        insertions_count = 0
+        deletions_count = 0
+        flagged_count = 0
+
+        # Sort edits by starting line to process potentially overlapping edits predictably
+        sorted_edits = sorted(
+            line_edits_response.line_edits, key=lambda le: le.starting_affected_line
+        )
+
+        for line_edit in sorted_edits:
+            start = line_edit.starting_affected_line
+            end = line_edit.ending_affected_line
+            resolution = line_edit.resolution
+            issue_desc = f"AI {resolution.capitalize()}: {line_edit.issue_message}"
+
+            # Validate line numbers against the original lookup
+            if not (start in line_lookup and end in line_lookup and start <= end):
+                logger.error(
+                    f"Invalid line numbers ({start}-{end}) in line edit: {line_edit.issue_message}. Skipping."
+                )
+                continue
+
+            # Check for overlap with already processed lines
+            current_range = set(range(start, end + 1))
+            if not current_range.isdisjoint(processed_lines):
+                logger.warning(
+                    f"Skipping line edit for lines {start}-{end} due to overlap with a previous edit: {line_edit.issue_message}"
+                )
+                continue
+
+            # Mark lines as processed
+            processed_lines.update(current_range)
+
+            if resolution == "edit":
+                # Extract relevant lines
+                relevant_lines_list = [line_lookup[i] for i in range(start, end + 1)]
+                relevant_lines_text = "\n".join(relevant_lines_list)
+
+                # Get the fix from AI
+                corrected_text = fix_line_edit(line_edit, relevant_lines_text)
+
+                if corrected_text is not None:
+                    if corrected_text.strip():  # Non-empty correction
+                        corrected_lines = corrected_text.splitlines()
+
+                        # 1. Add insertions for the corrected lines (inserted before original start)
+                        for i, line_content in enumerate(corrected_lines):
+                            # Insert each new line before the original start line.
+                            # The BaseEditor process logic handles sequential insertions.
+                            self.add_insertion(
+                                InsertLineIssue(line=start, insert_content=line_content)
+                            )
+                            insertions_count += 1
+                        logger.info(
+                            f"Added {len(corrected_lines)} insertions for AI edit at lines {start}-{end}"
+                        )
+
+                        # 2. Add deletions for the original lines
+                        for line_num in range(start, end + 1):
+                            self.add_deletion(
+                                DeleteLineIssue(
+                                    line=line_num,
+                                    existing_content=line_lookup[line_num],
+                                    issue_message=[
+                                        f"AI Edit (Deleting original line): {line_edit.issue_message}"
+                                    ],
+                                )
+                            )
+                            deletions_count += 1
+                        logger.info(
+                            f"Added {end - start + 1} deletions for AI edit at lines {start}-{end}"
+                        )
+
+                    else:  # Empty correction -> Treat as delete
+                        logger.warning(
+                            f"AI returned empty correction for lines {start}-{end}. Treating as 'delete'."
+                        )
+                        resolution = "delete"  # Fall through to delete logic
+                else:  # Failed to get correction -> Treat as flag
+                    logger.error(
+                        f"Failed to get AI correction for lines {start}-{end}. Treating as 'flag'."
+                    )
+                    resolution = "flag"  # Fall through to flag logic
+
+            if resolution == "delete":
+                for line_num in range(start, end + 1):
+                    self.add_deletion(
+                        DeleteLineIssue(
+                            line=line_num,
+                            existing_content=line_lookup[line_num],
+                            issue_message=[issue_desc],
+                        )
+                    )
+                    deletions_count += 1
+                logger.info(
+                    f"Added {end - start + 1} deletions for AI delete at lines {start}-{end}"
+                )
+
+            if resolution == "flag":
+                logger.warning(
+                    f"Flagged by AI: Lines {start}-{end}: {line_edit.issue_message}"
+                )
+                flagged_count += 1
+                # Optionally add to a separate list or file if needed
+
+        logger.success(
+            f"AI Editor finished collecting issues: {insertions_count} insertions, {deletions_count} deletions, {flagged_count} flagged."
+        )
+</file>
+
+<file path="src/tutedit/editors/core.py">
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, List
+
+import diskcache
+import instructor
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field, FilePath
+
+cache = diskcache.Cache("./data/cache/editing")
+patched_client = instructor.from_litellm(completion=completion)
+
+DELETE_LINE_MESSAGE = ">>>>>>>>>>>>>>DELETE<<<<<<<<<<<<<<<"
+
+
+class FixedLine(BaseModel):
+    "The fix for a given line of content. It must include the entire line replaced, not just the partial fix."
+
+    replacement_content: str = Field(description="The replacement content for the line")
+
+
+@dataclass(frozen=True, order=True)
+class LineIssue:
+    line: int
+    issue_message: List[str]
+
+
+@dataclass(frozen=True, order=True)
+class ReplaceLineFixableIssue(LineIssue):
+    existing_content: str
+
+    @cache.memoize()
+    def fix(self) -> str:
+        """
+        Fix the line issue using Anthropic's API.
+
+        Returns:
+            The corrected line as a string, or the original line if fixing failed.
+        """
+
+        try:
+            issues_str = "\n".join(self.issue_message)
+            logger.info(f"Fixing line issue: {issues_str}")
+            # Prepare prompt for Anthropic
+            prompt = f"""Rewrite the following line:
+
+<line number={self.line}>
+{self.existing_content}
+</line>
+
+To fix the following issue:
+
+<issue>
+{self.issue_message}
+</issue>
+
+Only return the rewritten line. Do not include the line number or any other text.
+"""
+
+            # Call Anthropic API
+            message = patched_client.chat.completions.create(
+                model="anthropic/claude-3-haiku-20240307",
+                max_tokens=1000,
+                temperature=0.25,  # Be precise
+                messages=[{"role": "user", "content": prompt}],
+                response_model=FixedLine,
+            )
+
+            return message.replacement_content
+        except Exception as e:
+            logger.error(f"Error fixing line issue: {e}")
+            return self.existing_content
+
+
+@dataclass(frozen=True, order=True)
+class InsertLineIssue:
+    line: int
+    insert_content: str
+
+
+@dataclass(frozen=True, order=True)
+class DeleteLineIssue(ReplaceLineFixableIssue):
+    def fix(self) -> str:
+        return DELETE_LINE_MESSAGE
+
+
+class BaseEditor(ABC, BaseModel):
+    path: FilePath
+    text: str | None = None
+    replacements: List[ReplaceLineFixableIssue] = Field(
+        default_factory=list, repr=False
+    )
+    insertions: List[InsertLineIssue] = Field(default_factory=list, repr=False)
+    deletions: List[DeleteLineIssue] = Field(default_factory=list, repr=False)
+
+    def get_text(self) -> str:
+        if self.text is None:
+            with open(self.path, "r") as f:
+                self.text = f.read()
+        return self.text
+
+    @abstractmethod
+    def prerun_checks(self) -> bool:
+        pass
+
+    # Add methods for subclasses to add issues
+    def add_replacement(self, issue: ReplaceLineFixableIssue):
+        self.replacements.append(issue)
+
+    def add_insertion(self, issue: InsertLineIssue):
+        self.insertions.append(issue)
+
+    def add_deletion(self, issue: DeleteLineIssue):
+        self.deletions.append(issue)
+
+    @abstractmethod
+    def collect_issues(self) -> None:
+        """Subclasses must implement this method to populate the internal issue lists."""
+        pass
+
+    def get_line_number_lookup(self) -> Dict[int, str]:
+        return {
+            line_number: line_content
+            for line_number, line_content in enumerate(self.get_text().split("\n"), 1)
+        }
+
+    def get_text_with_line_numbers(self) -> str:
+        return "\n".join(
+            sorted(
+                [
+                    f"{line_number}: {line_content}"
+                    for line_number, line_content in self.get_line_number_lookup().items()
+                ]
+            )
+        )
+
+    def generate_v2(self) -> str:
+        # Ensure text is loaded
+        self.get_text()
+        # Let subclass populate the issues
+        self.collect_issues()
+
+        initial_line_lookup = self.get_line_number_lookup()
+        changes: Dict[int, str] = {}  # Store results of fixes/deletions
+
+        # Process replacements
+        for issue in self.replacements:
+            new_content = issue.fix()
+            changes[issue.line] = new_content
+            logger.success(f"Replacing line {issue.line} with content: {new_content}")
+
+        # Process deletions
+        for issue in self.deletions:
+            changes[issue.line] = DELETE_LINE_MESSAGE  # Mark for deletion
+            logger.warning(f"Deleting line {issue.line}: {issue.existing_content}")
+
+        final_lines: List[str] = []
+        sorted_insertions = sorted(self.insertions, key=lambda x: x.line)
+        insertion_idx = 0
+
+        # Iterate through original lines, applying changes and insertions
+        for line_no, original_content in sorted(initial_line_lookup.items()):
+            # Process insertions BEFORE this line number
+            while (
+                insertion_idx < len(sorted_insertions)
+                and sorted_insertions[insertion_idx].line == line_no
+            ):
+                insert_issue = sorted_insertions[insertion_idx]
+                final_lines.append(insert_issue.insert_content)
+                logger.info(
+                    f"Inserting before line {line_no}: {insert_issue.insert_content}"
+                )
+                insertion_idx += 1
+
+            # Process change/deletion for this line number
+            if line_no in changes:
+                change_content = changes[line_no]
+                if change_content != DELETE_LINE_MESSAGE:
+                    final_lines.append(change_content)
+                # else: line is deleted, do nothing
+            else:
+                # No change, keep original content
+                final_lines.append(original_content)
+
+        # Handle any insertions that should occur after the last line
+        while insertion_idx < len(sorted_insertions):
+            insert_issue = sorted_insertions[insertion_idx]
+            logger.info(
+                f"Inserting after last line ({insert_issue.line}): {insert_issue.insert_content}"
+            )
+            final_lines.append(insert_issue.insert_content)
+            insertion_idx += 1
+
+        self.text = "\n".join(final_lines)
+        return self.get_text()
+</file>
+
+<file path="src/tutedit/editors/images.py">
+import base64
+import os
+import re
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+import diskcache  # type: ignore
+import instructor
+
+# litellm imports
+import litellm
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field, FilePath
+
+# Import from .core and potentially other project utils
+from .core import (
+    BaseEditor,
+    DeleteLineIssue,
+    InsertLineIssue,
+    ReplaceLineFixableIssue,
+)
+
+# Constants
+cache = diskcache.Cache("./data/cache/image_editor")
+patched_client = instructor.from_litellm(completion=completion)
+
+
+class ImageCaption(BaseModel):
+    """Represents the generated caption for an image."""
+
+    caption: str = Field(description="The generated image caption.")
+
+
+class ImageName(BaseModel):
+    """Represents the generated name for an image."""
+
+    name: str = Field(description="The generated image name.")
+
+
+class InsertLocation(BaseModel):
+    """Represents the line number where the image should be inserted."""
+
+    line_number: int = Field(description="The line number for image insertion.")
+
+
+class ImageAmbles(BaseModel):
+    """Represents the preamble and postamble text for an image."""
+
+    preamble: str = Field(description="The preamble text introducing the image.")
+    postamble: str = Field(
+        description="The postamble text transitioning from the image."
+    )
+
+
+class InternalImage(BaseModel):
+    """Represents an image file found for the article."""
+
+    path: Path
+
+    def _get_image_content(self, b64_encode: bool = True) -> str | bytes:
+        """Reads image content, optionally base64 encoding it."""
+        try:
+            with open(self.path, "rb") as f:
+                content = f.read()
+                if b64_encode:
+                    return base64.b64encode(content).decode("utf-8")
+                else:
+                    return content
+        except FileNotFoundError:
+            logger.error(f"Image file not found: {self.path}")
+            return "" if b64_encode else b""
+        except Exception as e:
+            logger.error(f"Error reading image {self.path}: {e}")
+            return "" if b64_encode else b""
+
+    @cache.memoize()
+    def _generate_image_caption(self) -> str:
+        """Generates a caption (alt text) for the image using an AI model."""
+        image_content = self._get_image_content()
+        if not image_content or not isinstance(image_content, str):
+            return ""
+
+        try:
+            prompt = """Please provide a concise alt text description for this image, suitable for use in an HTML `alt` attribute. Be descriptive but brief.
+            """
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",  # Assuming PNG
+                                "data": image_content,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            response: ImageCaption = patched_client(
+                model="claude-3-haiku-20240307",
+                max_tokens=400,
+                messages=messages,
+                response_model=ImageCaption,
+            )
+
+            logger.success(
+                f"Generated image caption for {self.path}: {response.caption}"
+            )
+            return response.caption
+
+        except Exception as e:
+            logger.error(
+                f"Error generating image caption for {self.path}: {e}", exc_info=True
+            )
+            return ""
+
+    @cache.memoize()
+    def _generate_image_name(self) -> str:
+        """Generates a sanitized file name for the image using an AI model."""
+        image_content = self._get_image_content()
+        if not image_content or not isinstance(image_content, str):
+            return ""
+
+        try:
+            prompt = """Please provide a concise, descriptive, lowercase file name for this image, suitable for web use.
+
+            Some tips:
+            - Use a short, descriptive name (3-5 words max)
+            - Use only lowercase letters and underscores (no spaces or other special characters)
+            - Do not include the file extension.
+            """
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",  # Assuming PNG
+                                "data": image_content,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            response: ImageName = patched_client(
+                model="claude-3-haiku-20240307",
+                max_tokens=400,
+                messages=messages,
+                response_model=ImageName,
+            )
+
+            name = response.name.strip().lower().replace(" ", "_")
+            # Basic sanitization
+            name = re.sub(r"[^\w_]+", "", name)
+            # Add extension
+            _, ext = os.path.splitext(self.path)
+            if not ext:
+                ext = ".png"  # Default extension
+            final_name = f"{name}{ext}"
+            logger.success(f"Generated image name for {self.path}: {final_name}")
+            return final_name
+
+        except Exception as e:
+            logger.error(
+                f"Error generating image name for {self.path}: {e}", exc_info=True
+            )
+            return ""
+
+    @cache.memoize()
+    def get_insert_location(
+        self,
+        text_with_line_numbers: str,
+        blacklist_locations: List[int],
+        extra_prompt: str = "",
+    ) -> int:
+        """Determines the line number where the image should be inserted."""
+        image_content = self._get_image_content()
+        if not image_content or not isinstance(image_content, str):
+            return -1
+
+        prompt = (
+            f"""
+        You are an expert technical writer assisting in placing an image within an article.
+        Analyze the provided text (with line numbers) and the image (shown previously). Determine the single most appropriate line number *after which* to insert this image.
+
+        Here is the text with line numbers:
+        <text>
+        {text_with_line_numbers}
+        </text>
+
+        CRITICAL: Do NOT select any of the following line numbers, as they are already occupied or blacklisted:
+        <blacklist_locations>
+        {", ".join(map(str, blacklist_locations))}
+        </blacklist_locations>
+
+        Consider these factors before deciding:
+        - Logical flow: Where does the image best fit to illustrate a concept, introduce a section, or provide context?
+        - Relevance: Insert the image near the text it directly relates to.
+        - Placement: Generally, images should appear *after* introductory text or a paragraph explaining them, and *before* the detailed content (like code blocks) they illustrate. Avoid placing the image as the very first element.
+        - Reader experience: How will placing the image here help the reader understand the content better?
+
+        First, explain your reasoning within <thinking> tags. Then, provide the chosen line number in <line_number> tags.
+        """
+            + extra_prompt
+        )
+
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",  # Assuming PNG
+                                "data": image_content,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            response: InsertLocation = patched_client(
+                model="claude-3-opus-20240229",  # Using Opus for potentially better reasoning
+                max_tokens=500,
+                messages=messages,
+                response_model=InsertLocation,
+            )
+
+            line_number = response.line_number
+            if line_number in blacklist_locations:
+                logger.warning(
+                    f"AI chose blacklisted line {line_number} for {self.path}. Retrying.",
+                )
+                # Simple retry mechanism (could be more robust)
+                return self.get_insert_location(
+                    text_with_line_numbers,
+                    blacklist_locations,
+                    " PREVIOUS ATTEMPT FAILED: The line number chosen was blacklisted. Please choose a DIFFERENT line number.",
+                )
+            logger.success(
+                f"Determined insert location for {self.path}: after line {line_number}"
+            )
+            return line_number
+
+        except Exception as e:
+            logger.error(
+                f"Error getting insert location for {self.path}: {e}", exc_info=True
+            )
+            return -1
+
+    @cache.memoize()
+    def get_ambles(
+        self, text_with_line_numbers: str, caption: str, line_number: int
+    ) -> Tuple[str, str]:
+        """Generates preamble and postamble text for the image using an AI model."""
+        image_content = self._get_image_content()
+        if not image_content or not isinstance(image_content, str):
+            return "", ""
+
+        try:
+            # Rough context extraction (adjust window size as needed)
+            context_window = 5
+            lines = text_with_line_numbers.splitlines()
+            start_line = max(0, line_number - context_window)
+            end_line = min(len(lines), line_number + context_window + 1)
+            context_text = "\n".join(lines[start_line:end_line])
+
+            prompt = f"""You are an expert technical writer. Given an image (shown previously), its caption ("{caption}"), the line number ({line_number}) where it will be inserted, and the surrounding text context, please write:
+            1. A concise preamble (1-2 sentences) to introduce the image. Explain its relevance or what the reader should focus on.
+            2. A concise postamble (1 sentence) to transition smoothly from the image to the following text.
+
+            Context (Image will be inserted after line {line_number}):
+            <text_context>
+            {context_text}
+            </text_context>
+
+            Image Caption: {caption}
+
+            Guidelines:
+            - Keep ambles brief and natural-sounding.
+            - The preamble should precede the image markdown.
+            - The postamble should follow the image markdown.
+            - If either amble is unnecessary or doesn't make sense, return empty strings.
+            """
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",  # Assuming PNG
+                                "data": image_content,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            response: ImageAmbles = patched_client(
+                model="claude-3-haiku-20240307",
+                max_tokens=500,
+                messages=messages,
+                response_model=ImageAmbles,
+            )
+
+            preamble = response.preamble.strip()
+            postamble = response.postamble.strip()
+
+            logger.success(
+                f"Generated ambles for {self.path}: Preamble='{preamble}', Postamble='{postamble}'"
+            )
+            return preamble, postamble
+
+        except Exception as e:
+            logger.error(f"Error generating ambles for {self.path}: {e}", exc_info=True)
+            return "", ""
+
+    def as_insert_line_issues(
+        self,
+        text_with_line_numbers: str,
+        blacklist_locations: List[int],
+        image_url_prefix: str,
+    ) -> List[InsertLineIssue]:
+        """Generates InsertLineIssue objects for the image and its ambles."""
+        insert_issues: List[InsertLineIssue] = []
+
+        # 1. Determine insert location
+        # Add current potential insertion points to blacklist temporarily to avoid collisions during generation
+        temp_blacklist = list(
+            set(blacklist_locations + [i for i in range(1, 5)])
+        )  # Include first few lines too
+        line_number = self.get_insert_location(text_with_line_numbers, temp_blacklist)
+        if line_number == -1:
+            logger.warning(
+                f"Could not determine insert location for {self.path}. Skipping."
+            )
+            return []
+
+        # 2. Generate caption and new filename
+        caption = self._generate_image_caption()
+        if not caption:
+            logger.warning(
+                f"Could not generate caption for {self.path}. Using filename as fallback."
+            )
+            caption = os.path.splitext(os.path.basename(self.path))[0].replace(
+                "_", " "
+            )  # Fallback caption
+
+        new_image_name = self._generate_image_name()
+        if not new_image_name:
+            logger.error(
+                f"Could not generate new name for {self.path}. Cannot create insertion."
+            )
+            return []  # Cannot insert without a valid name/URL
+
+        # 3. Generate ambles
+        preamble, postamble = self.get_ambles(
+            text_with_line_numbers, caption, line_number
+        )
+
+        # 4. Create InsertLineIssue objects (order matters for application)
+        # Insertions happen *after* the specified line number.
+        # We want: Preamble -> Image -> Postamble
+
+        insertion_point = (
+            line_number  # All insertions happen relative to this original line
+        )
+
+        # Add Preamble (if exists) - inserts after line `insertion_point`
+        if preamble:
+            insert_issues.append(
+                InsertLineIssue(line=insertion_point, insert_content=preamble)
+            )
+            insertion_point += 1  # Next insertion point shifts down
+
+        # Add Image Markdown - inserts after the original line (or preamble if it existed)
+        image_markdown = (
+            f"![{caption}]({image_url_prefix.rstrip('/')}/{new_image_name})"
+        )
+        insert_issues.append(
+            InsertLineIssue(line=insertion_point, insert_content=image_markdown)
+        )
+        insertion_point += 1  # Next insertion point shifts down
+
+        # Add Postamble (if exists) - inserts after the image markdown
+        if postamble:
+            insert_issues.append(
+                InsertLineIssue(line=insertion_point, insert_content=postamble)
+            )
+            # insertion_point += 1 # Not needed for subsequent images in loop
+
+        logger.info(
+            f"Prepared {len(insert_issues)} insertions for image {self.path} at line {line_number}"
+        )
+        return insert_issues
+
+
+class ImageAdditionEditor(BaseEditor):
+    """
+    Editor that finds images associated with an article, generates captions and names,
+    determines optimal insertion points, and generates markdown insertions with ambles.
+    """
+
+    image_url_prefix: str = Field(
+        default="/images",
+        description="The URL prefix for image paths in the markdown output.",
+    )
+    image_folder_path: Path = Field(
+        description="The path to the subfolder containing images within the article directory.",
+    )
+
+    def _get_image_dir(self) -> Optional[str]:
+        """Locates the directory containing images for the article."""
+        try:
+            # Use the potentially imported get_directory function
+
+            image_dir = str(self.image_folder_path)
+            if self.image_folder_path.is_dir():
+                logger.info(f"Found image directory: {self.image_folder_path}")
+                return str(self.image_folder_path)
+            else:
+                logger.warning(
+                    f"Image directory not found at expected location: {self.image_folder_path}"
+                )
+                return None
+        except Exception as e:
+            logger.error(f"Error getting images for title '{self.path}': {e}")
+            return None
+
+    def _prepare_images(self, image_dir: str) -> List[InternalImage]:
+        """Creates InternalImage objects and handles renaming/copying."""
+        image_objects: List[InternalImage] = []
+        copied_files = (
+            set()
+        )  # Track successfully copied files to avoid processing originals if copy fails
+
+        try:
+            image_files_paths = [
+                p
+                for p in Path(image_dir).iterdir()
+                if p.is_file() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif")
+            ]
+            image_files = [p.name for p in image_files_paths]
+        except FileNotFoundError:
+            logger.error(f"Cannot list files, image directory not found: {image_dir}")
+            return []
+        except Exception as e:
+            logger.error(f"Error listing files in image directory {image_dir}: {e}")
+            return []
+
+        logger.info(f"Found {len(image_files)} potential image files in {image_dir}")
+
+        for file_path_obj in image_files_paths:
+            original_path_str = str(file_path_obj)
+            image = InternalImage(path=file_path_obj)
+            new_name = image._generate_image_name()
+
+            if new_name:
+                new_path_obj = file_path_obj.parent / new_name
+                new_path_str = str(new_path_obj)
+                if original_path_str.lower() != new_path_str.lower():  # Avoid self-copy
+                    try:
+                        shutil.copy2(
+                            original_path_str, new_path_str
+                        )  # shutil usually works fine with str
+                        logger.success(
+                            f"Copied '{original_path_str}' to '{new_path_str}'"
+                        )
+                        # Use the new path for the InternalImage object
+                        image.path = new_path_obj
+                        copied_files.add(
+                            new_path_str
+                        )  # Add the *new* path string if needed
+                        image_objects.append(image)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to copy '{original_path_str}' to '{new_path_str}': {e}"
+                        )
+                        # If copy fails, should we still process the original? Maybe not.
+                else:
+                    # Name generated is the same as original, use original path
+                    logger.info(
+                        f"Generated name '{new_name}' matches original '{file_path_obj.name}'. Using original."
+                    )
+                    image_objects.append(image)  # Use original image object
+            else:
+                logger.warning(
+                    f"Could not generate name for '{original_path_str}'. Skipping this image."
+                )
+
+        # Log summary
+        processed_count = len(image_objects)
+        skipped_count = (
+            len(image_files) - processed_count
+        )  # Approximation if copies failed
+        logger.success(
+            f"Prepared {processed_count} images for processing. Skipped {skipped_count}."
+        )
+        return image_objects
+
+    def prerun_checks(self) -> bool:
+        """Checks if necessary configurations and directories exist."""
+        # Removed anthropic key check
+        image_dir = self._get_image_dir()
+        if image_dir is None:
+            # Logged in _get_image_dir, returning True to allow editor to run (but do nothing)
+            return True
+        return True
+
+    def collect_issues(self) -> None:
+        """Finds images, prepares them, determines locations, and adds insertion issues."""
+        image_dir = self._get_image_dir()
+        if not image_dir:
+            return
+
+        # Prepare images (includes renaming/copying)
+        image_objects = self._prepare_images(image_dir)
+        if not image_objects:
+            logger.info("No images found or prepared. No insertions to generate.")
+            return
+
+        text_with_line_numbers = self.get_text_with_line_numbers()  # Use helper method
+
+        # Keep track of lines where insertions *will* happen to avoid conflicts between images
+        # Includes line itself and potentially +/- 1 for ambles
+        blacklist_locations: List[int] = [0, 1, 2, 3]  # Initial blacklist
+        insertions_count = 0
+
+        for image in image_objects:
+            # Pass the current blacklist to the image processing method
+            current_image_insertions = image.as_insert_line_issues(
+                text_with_line_numbers, blacklist_locations, self.image_url_prefix
+            )
+
+            if current_image_insertions:
+                # Sort insertions for this specific image before adding
+                # This ensures ambles and image are added in the correct order relative to each other
+                sorted_current_insertions = sorted(
+                    current_image_insertions, key=lambda issue: issue.line
+                )
+
+                for issue in sorted_current_insertions:
+                    self.add_insertion(issue)  # Add to the BaseEditor's list
+                    insertions_count += 1
+
+                # Update blacklist with the lines affected by these insertions
+                # The insertion line numbers are relative to the *original* document state
+                # before these insertions are applied.
+                affected_lines = {issue.line for issue in current_image_insertions}
+                # Also blacklist lines around the core image insertion for safety
+                # Find the core image insertion line (heuristic: middle issue)
+                if len(current_image_insertions) > 0:
+                    core_line = sorted([i.line for i in current_image_insertions])[
+                        len(current_image_insertions) // 2
+                    ]
+                    affected_lines.add(core_line - 1)
+                    affected_lines.add(core_line + 1)
+
+                blacklist_locations.extend(list(affected_lines))
+                # Remove duplicates and sort for cleaner logging/debugging
+                blacklist_locations = sorted(list(set(blacklist_locations)))
+
+        logger.success(
+            f"Collected a total of {insertions_count} line insertions for {len(image_objects)} images."
+        )
+        # No need to return anything or sort globally here, BaseEditor handles processing order
+</file>
+
+<file path="src/tutedit/editors/links.py">
+from typing import List
+
+import diskcache
+import instructor
+import yaml
+from litellm import completion
+from loguru import logger
+from pydantic import BaseModel, Field, HttpUrl
+from smolcrawl.db import Page, TantivyIndexer
+
+from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
+from .utils import get_search_terms
+
+cache = diskcache.Cache("./data/cache/editing")
+patched_client = instructor.from_litellm(completion=completion)
+
+
+class LinkLocation(BaseModel):
+    """
+    A link location that was found in the text.
+    """
+
+    line_number: int = Field(
+        description="The line number to link to. This line number MUST refer to text "
+    )
+    url: HttpUrl = Field(description="The url to link to")
+    instructions: str = Field(
+        description="Instructions for how to rewrite the line to include the link. This should be a natural way to include the link in the text."
+    )
+
+
+class LinkLocations(BaseModel):
+    """
+    The reasoning for the list of link locations that were found in the text.
+
+    A list of link locations that were found in the text.
+    """
+
+    reasoning: str = Field(description="The reasoning for the list of link locations")
+    link_locations: List[LinkLocation] = Field(
+        description="A list of link locations that were found in the text, should be lists of line numbers and urls"
+    )
+
+
+def internal_search(search_term: str, index_name: str):
+    logger.info(f"Searching for {search_term} in {index_name}")
+    db = TantivyIndexer(index_name)
+    results = db.query(search_term)
+    if not results:
+        logger.error(f"No results found for search term {search_term}")
+        return []
+    return results
+
+
+def find_link_locations(text: str, search_results: List[Page]) -> List[LinkLocation]:
+    search_results_list = []
+    for no, result in enumerate(search_results):
+        internal_result = {"title": result.title, "url": result.url}
+        search_results_list.append(
+            f"<result number={no}>\n{yaml.dump(internal_result)}\n</result>"
+        )
+    search_results_string = "\n".join(search_results_list)
+    prompt = f"""You are an expert technical writer.
+
+    You are given a list of search results for a technical blog post or tutorial.
+    
+    You are also given text with line numbers.
+
+    Your job is to find the best locations in the text to link to the search results.
+
+    <text_with_line_numbers>
+    {text}
+    </text_with_line_numbers>
+
+    <search_results>
+    {search_results_string}
+    </search_results>
+
+    Return a list of dictionaries with the following keys:
+    - line_number: the line number to link to
+    - url: the url to link to
+
+    Rules:
+    - The line number MUST refer to text in the <text_with_line_numbers> section.
+    - Do not repeat different links for the same location. For each line that you're recommending a link for, only return one link.
+    - Only include official looking links.
+    - The link should be relevant to the search term, which should in term be relevant to the text.
+    - You must only point to lines of text, not code lines or empty lines.
+    - NEVER MODIFY CODE LINES.  
+    
+    Before you return your response, think about the best way to link to the search results. Be sure to use the search term to find a relevant link.
+    Only include official looking links.
+
+    Return your response in JSON format with the following structure:
+    {{
+        "reasoning": "The reasoning for the list of link locations",
+        "link_locations": [
+            {{
+                "line_number": "The line number to link to",
+                "url": "The url to link to",
+            }}
+        ]
+    }}
+    """
+    try:
+        response = patched_client.chat.completions.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1000,
+            temperature=0.25,
+            messages=[{"role": "user", "content": prompt}],
+            response_model=LinkLocations,
+        )
+        link_locations = response.link_locations
+        logger.success(f"Found {len(link_locations)} link locations")
+        return link_locations
+    except Exception as e:
+        logger.exception("Error finding link locations", error=e)
+        return []
+
+
+def recommend_internal_links(text: str, index_name: str) -> List[LineIssue]:
+    search_terms = get_search_terms(text)
+    all_search_results = []
+    for search_term in search_terms:
+        search_results = internal_search(search_term, index_name)
+        all_search_results.extend(search_results)
+
+    logger.info(f"Found {len(all_search_results)} search results")
+
+    if not all_search_results:
+        return []
+
+    link_locations = find_link_locations(text, all_search_results)
+
+    final_line_issues = []
+    for link_location in link_locations:
+        final_line_issues.append(
+            LineIssue(
+                line=link_location.line_number,
+                issue_message=[
+                    f"{link_location.instructions}. Rewrite this line to include, in a natural way, an inline link to {link_location.url}. Make the link in markdown format."
+                ],
+            )
+        )
+    return final_line_issues
+
+
+class InternalLinkEditor(BaseEditor):
+    indexes: List[str]
+
+    def prerun_checks(self) -> bool:
+        for index_name in self.indexes:
+            index = TantivyIndexer(index_name, create_if_missing=False)
+            if not index.exists():
+                logger.error(f"Index {index_name} does not exist")
+                return False
+
+        return True
+
+    def collect_issues(self) -> None:
+        """Recommends internal links based on search terms and adds them as replacement issues."""
+        text_with_line_numbers = self.get_text_with_line_numbers()
+        line_lookup = self.get_line_number_lookup()
+        replacements_count = 0
+
+        for index_name in self.indexes:
+            logger.info(f"Processing index: {index_name}")
+            recd_links = recommend_internal_links(text_with_line_numbers, index_name)
+
+            if not recd_links:
+                logger.info(f"No internal links found for index {index_name}")
+                continue
+
+            logger.success(
+                f"Found {len(recd_links)} potential internal link locations for index {index_name}"
+            )
+
+            for link_issue in recd_links:
+                # Ensure the line exists in the current text
+                if link_issue.line in line_lookup:
+                    replacement_issue = ReplaceLineFixableIssue(
+                        line=link_issue.line,
+                        issue_message=link_issue.issue_message,
+                        existing_content=line_lookup[link_issue.line],
+                    )
+                    self.add_replacement(replacement_issue)
+                    replacements_count += 1
+                else:
+                    logger.warning(
+                        f"Skipping recommended link for line {link_issue.line} as it does not exist in the lookup."
+                    )
+
+        logger.success(
+            f"Collected {replacements_count} line replacement issues for internal links."
+        )
+</file>
+
+<file path="src/tutedit/editors/vale.py">
+import json
+import os
+import subprocess
+import tempfile
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+from loguru import logger
+from pydantic import FilePath
+
+from .core import (
+    BaseEditor,
+    DeleteLineIssue,
+    InsertLineIssue,
+    LineIssue,
+    ReplaceLineFixableIssue,
+)
+
+
+@dataclass
+class ActionC:
+    Name: str = ""
+    Params: Optional[List[str]] = None
+
+
+@dataclass
+class ValeAlert:
+    Action: ActionC = field(default_factory=ActionC)
+    Span: List[int] = field(default_factory=list)
+    Check: str = ""
+    Description: str = ""
+    Link: str = ""
+    Message: str = ""
+    Severity: str = ""
+    Match: str = ""
+    Line: int = 0
+
+    def as_line_issue(self) -> LineIssue:
+        return LineIssue(
+            line=self.Line,
+            issue_message=[self.Check + " - " + self.Message],
+        )
+
+
+@dataclass
+class ValeFileReport:
+    issues: List[ValeAlert] = field(default_factory=list)
+
+    def as_line_issues(self) -> List[LineIssue]:
+        return [alert.as_line_issue() for alert in self.issues]
+
+
+def check_vale_installation() -> bool:
+    try:
+        # Run 'vale --version' and capture the output
+        result = subprocess.run(
+            ["vale", "--version"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        # If the command runs successfully, Vale is installed
+        return True
+    except FileNotFoundError:
+        # If 'vale' command is not found, Vale is not installed or not in PATH
+        return False
+    except subprocess.CalledProcessError as e:
+        # Handle other potential errors during the command execution
+        logger.error(f"Error checking Vale installation: {e}")
+        return False
+
+
+def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
+    if not check_vale_installation():
+        logger.error("Vale is not installed or not found in PATH")
+        return []
+
+    vale_dir = os.environ.get("PROJECT_ROOT", os.getcwd())
+
+    # Create a temporary file and ensure it's written and closed
+    with tempfile.NamedTemporaryFile(
+        dir=vale_dir, mode="w", suffix=".md", delete=False
+    ) as temp_file:
+        temp_file.write(text)
+        temp_file_path = temp_file.name
+
+    try:
+        # Get the full path to vale
+        vale_path = subprocess.check_output(["which", "vale"]).decode().strip()
+
+        # Run vale with the correct working directory and environment
+        result = subprocess.run(
+            [vale_path, "--config", vale_config_path, "--output=JSON", temp_file_path],
+            capture_output=True,
+            text=True,
+            cwd=vale_dir,
+            env=dict(os.environ, PATH=os.environ.get("PATH", "")),
+        )
+
+        logger.success("Vale Result", result=result)
+        # Parse the JSON output
+        as_json = json.loads(result.stdout)
+        logger.success("Vale JSON", json=as_json)
+
+        # Convert JSON alerts into ValeAlert objects
+        issues = []
+        for file_path, alerts in as_json.items():
+            logger.info(f"Found {len(alerts)} alerts in {file_path}")
+            for alert in alerts:
+                action = ActionC(
+                    Name=alert.get("Action", {}).get("Name", ""),
+                    Params=alert.get("Action", {}).get("Params"),
+                )
+                issues.append(
+                    ValeAlert(
+                        Action=action,
+                        Span=alert.get("Span", []),
+                        Check=alert.get("Check", ""),
+                        Description=alert.get("Description", ""),
+                        Link=alert.get("Link", ""),
+                        Message=alert.get("Message", ""),
+                        Severity=alert.get("Severity", ""),
+                        Match=alert.get("Match", ""),
+                        Line=alert.get("Line", 0),
+                    )
+                )
+
+        report = ValeFileReport(issues=issues)
+        logger.success("Vale Report", report=report)
+        return report.as_line_issues()
+
+    except Exception as e:
+        logger.exception("Error running Vale", error=e)
+        return []
+    finally:
+        # Clean up the temporary file
+        try:
+            os.remove(temp_file_path)
+        except Exception as e:
+            logger.exception("Error removing temporary file", error=e)
+
+
+class ValeEditor(BaseEditor):
+    vale_config_path: FilePath
+
+    def prerun_checks(self) -> bool:
+        vale_installed = check_vale_installation()
+        vale_config_exists = os.path.exists(str(self.vale_config_path))
+        return vale_installed and vale_config_exists
+
+    def collect_issues(self) -> None:
+        """Runs Vale and adds any reported issues as replacement issues."""
+        issues = run_vale(self.get_text(), str(self.vale_config_path))
+        if not issues:
+            logger.info("Vale reported no issues.")
+            return
+
+        line_lookup = self.get_line_number_lookup()
+        replacements_count = 0
+
+        for issue in issues:
+            # Ensure the line number from Vale is valid
+            if issue.line in line_lookup:
+                replacement_issue = ReplaceLineFixableIssue(
+                    line=issue.line,
+                    issue_message=issue.issue_message,
+                    existing_content=line_lookup[issue.line],
+                )
+                self.add_replacement(replacement_issue)
+                replacements_count += 1
+            else:
+                logger.warning(
+                    f"Skipping Vale issue for line {issue.line} as it's not in the lookup (maybe out of bounds?). Message: {issue.issue_message}"
+                )
+
+        logger.success(
+            f"Collected {replacements_count} line replacement issues from Vale."
+        )
+</file>
+
+<file path=".gitignore">
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+smolcrawl-data/
+data/
+storage/
+</file>
+
+</files>

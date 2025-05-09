@@ -1,0 +1,135 @@
+# EditAI
+
+A Python tool for editing and improving Markdown documentation.
+
+## Overview
+
+EditAI provides various specialized editors for enhancing Markdown documentation:
+
+- **Custom Rules Editor**: Apply user-defined editing rules from markdown files
+- **Vale Editor**: Integrate with the Vale linting tool
+- **AI Editor**: Use AI to identify and correct text issues
+- **Internal Link Editor**: Add links between documents
+- **Image Addition Editor**: Insert images into documents
+- **Arbitrary Links Editor**: Interactive tool to add arbitrary links to a document
+
+Each editor can process either single files or entire directories of markdown files.
+
+## Installation
+
+```bash
+# Install from source
+pip install -e .
+```
+
+## Usage
+
+### Custom Rules Editor
+
+Apply custom plaintext markdown rules to your document:
+
+```bash
+# Process a single file
+python -m editai.cli custom-rules my-document.md ./rules/
+
+# Process a directory of files
+python -m editai.cli custom-rules ./docs/ ./rules/ --recursive
+```
+
+### Vale Editor
+
+Apply Vale linting rules to your document:
+
+```bash
+# Process a single file
+python -m editai.cli vale my-document.md --vale-config-path ./.vale.ini
+
+# Process a directory of files
+python -m editai.cli vale ./docs/ --vale-config-path ./.vale.ini --recursive
+```
+
+### AI Editor
+
+Use AI to improve your document:
+
+```bash
+# Process a single file
+python -m editai.cli ai my-document.md
+
+# Process a directory of files
+python -m editai.cli ai ./docs/ --recursive
+```
+
+### Internal Link Editor
+
+Add internal links to your document:
+
+```bash
+# Process a single file
+python -m editai.cli links my-document.md --local-index-names docs-index
+
+# Process a directory of files
+python -m editai.cli links ./docs/ --local-index-names docs-index --recursive
+```
+
+### Image Addition Editor
+
+Add images to your document:
+
+```bash
+# Process a single file
+python -m editai.cli add-images my-document.md ./images/ --image-url-prefix /images
+
+# Process a directory of files
+python -m editai.cli add-images ./docs/ ./images/ --image-url-prefix /images --recursive
+```
+
+### Arbitrary Links Editor
+
+Interactive REPL to add arbitrary links to a document:
+
+```bash
+python -m editai.cli arbitrary-links my-document.md
+```
+
+Note: The arbitrary links editor does not support directory processing since it's interactive.
+
+## Folder Processing
+
+Process multiple files in a directory with a single command. Common options:
+
+- `--recursive`: Process subdirectories recursively
+- `--include-pattern`: Glob pattern for files to include (default: "*.md")
+- `--exclude-patterns`: List of glob patterns for files to exclude
+- `--dry-run`: Don't modify files, just show what would be changed
+
+See the [folder processing documentation](docs/folder_processing.md) for more details.
+
+## Custom Rules
+
+Custom rules are plain markdown files containing editing instructions. Each rule file:
+
+- Contains markdown instructions for a specific editing task
+- Is processed by AI to interpret and apply changes
+- Example rules: passive voice conversion, bullet point formatting
+
+Managing rules:
+
+```bash
+# List all rules in a directory
+python -m editai.cli list-rules ./rules/
+
+# View a specific rule
+python -m editai.cli view-rule ./rules/ passive_voice
+
+# Create a new rule
+python -m editai.cli create-rule ./rules/ my_new_rule
+```
+
+## Examples
+
+Check the `examples/` directory for example files and usage scenarios.
+
+## License
+
+MIT

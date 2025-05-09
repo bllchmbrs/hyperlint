@@ -1,5 +1,5 @@
 [project]
-name = "tutedit"
+name = "editai"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -15,5 +15,5 @@ dependencies = [
 ]
 
 [project.scripts]
-tutedit = "tutedit.cli:app"
+editai = "editai.cli:app"
 
