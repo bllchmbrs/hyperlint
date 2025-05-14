@@ -2,7 +2,6 @@ import base64
 import os
 import re
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -10,18 +9,11 @@ import diskcache  # type: ignore
 import instructor
 
 # litellm imports
-import litellm
 from litellm import completion
 from loguru import logger
-from pydantic import BaseModel, Field, FilePath
+from pydantic import BaseModel, Field
 
-# Import from .core and potentially other project utils
-from .core import (
-    BaseEditor,
-    DeleteLineIssue,
-    InsertLineIssue,
-    ReplaceLineFixableIssue,
-)
+from .core import BaseEditor, InsertLineIssue
 
 # Constants
 cache = diskcache.Cache("./data/cache/image_editor")
@@ -497,7 +489,7 @@ class ImageAdditionEditor(BaseEditor):
                 caption_model=self.caption_model,
                 name_model=self.name_model,
                 location_model=self.location_model,
-                amble_model=self.amble_model
+                amble_model=self.amble_model,
             )
             new_name = image._generate_image_name()
 

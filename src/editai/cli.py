@@ -10,9 +10,8 @@ from smolcrawl import list_indices as list_indices_from_smolcrawl
 from typing import Optional
 
 from .config import SimpleConfig, create_default_config, find_config_file
-from .editors.ai import AIEditor
 from .editors.arbitrary_links import ArbitraryLinkEditor
-from .editors.custom_rules import CustomRuleEditor
+from .editors.custom_rules import RulesEditor
 from .editors.folder_processor import FolderProcessor
 from .editors.images import ImageAdditionEditor
 from .editors.links import InternalLinkEditor
@@ -27,8 +26,7 @@ Available Commands:
 - vale: Apply Vale linting to markdown files
 - links: Add internal links between documents
 - add-images: Insert images into documents
-- ai: Use AI to identify and correct text issues  
-- custom-rules: Apply user-defined editing rules
+- custom-rules: Apply AI-powered editing rules
 - list-rules: Show available custom rules
 - view-rule: Display contents of a specific rule
 - create-rule: Create a new custom rule
@@ -293,70 +291,7 @@ def add_images(
             print(processed_content)
 
 
-@app.command()
-def ai(
-    path: str,
-    recursive: bool = False,
-    include_pattern: str = "*.md",
-    exclude_patterns: List[str] = None,
-    dry_run: bool = False,
-):
-    """
-    Use AI to improve document(s).
 
-    If path is a directory, process all markdown files in the directory.
-    Otherwise, process the single file at path.
-
-    The AI editor uses machine learning to:
-    - Fix grammar and spelling issues
-    - Improve clarity and readability
-    - Standardize formatting and style
-    - Expand abbreviations and technical terms
-
-    Examples:
-        # Process a single file
-        editai ai docs/readme.md
-
-        # Process all markdown files in a directory and subdirectories
-        editai ai docs/ --recursive
-
-        # Preview AI improvements without applying them
-        editai ai tutorial.md --dry-run
-
-        # Process only specific files in a directory
-        editai ai docs/ --include-pattern "*.md" --exclude-patterns "draft/*,private/*" --recursive
-    """
-    path_obj = Path(path)
-
-    if is_directory(path):
-        # Process directory
-        processor = FolderProcessor(
-            directory_path=path_obj,
-            editor_class=AIEditor,
-            editor_kwargs={},
-            include_pattern=include_pattern,
-            exclude_patterns=exclude_patterns or [],
-            recursive=recursive,
-        )
-        results = processor.process_directory(dry_run=dry_run)
-
-        # Print summary
-        if not dry_run:
-            print(f"Processed {len(results)} files with AI editor.")
-        else:
-            print(f"Dry run - would process {len(results)} files with AI editor.")
-    else:
-        # Process single file
-        editor = AIEditor(path=path_obj)
-        processed_content = editor.generate_v2()
-
-        if not dry_run:
-            with open(path_obj, "w") as f:
-                f.write(processed_content)
-            print(f"Processed file: {path_obj}")
-        else:
-            print(f"Dry run - would update {path_obj}")
-            print(processed_content)
 
 
 @app.command()
@@ -402,15 +337,16 @@ def custom_rules(
     include_pattern: str = "*.md",
     exclude_patterns: List[str] = None,
     dry_run: bool = False,
+    model: str = "anthropic/claude-3-haiku-20240307",
 ):
     """
-    Apply custom plaintext markdown rules to document(s).
+    Apply AI-powered rules to document(s).
 
     If path is a directory, process all markdown files in the directory.
     Otherwise, process the single file at path.
 
-    Custom rules are markdown files containing instructions for specific
-    edits like fixing passive voice or standardizing formatting.
+    Rules are markdown files containing instructions for specific edits.
+    Each rule is processed using AI to apply the specified changes.
 
     Examples:
         # Apply all rules to a single file
@@ -454,12 +390,13 @@ def custom_rules(
         # Process directory
         processor = FolderProcessor(
             directory_path=path_obj,
-            editor_class=CustomRuleEditor,
+            editor_class=RulesEditor,
             editor_kwargs={
                 "rules_directory": rules_dir_obj,
                 "include_rules": include_list,
                 "exclude_rules": exclude_list,
                 "dry_run": dry_run,
+                "model": model,
             },
             include_pattern=include_pattern,
             exclude_patterns=exclude_patterns or [],
@@ -474,12 +411,13 @@ def custom_rules(
             print(f"Dry run - would process {len(results)} files with custom rules.")
     else:
         # Process single file
-        editor = CustomRuleEditor(
+        editor = RulesEditor(
             path=path_obj,
             rules_directory=rules_dir_obj,
             include_rules=include_list,
             exclude_rules=exclude_list,
             dry_run=dry_run,
+            model=model,
         )
 
         processed_content = editor.generate_v2()
@@ -760,9 +698,8 @@ def run_single_editor(
 
     # Map editor names to classes
     editor_mapping = {
-        "ai": AIEditor,
         "vale": ValeEditor,
-        "custom_rules": CustomRuleEditor,
+        "custom_rules": RulesEditor,
         "images": ImageAdditionEditor,
         "links": InternalLinkEditor,
     }
