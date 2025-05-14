@@ -61,8 +61,8 @@ Only return the rewritten line. Do not include the line number or any other text
             # Call Anthropic API
             message = patched_client.chat.completions.create(
                 model="anthropic/claude-3-haiku-20240307",
-                max_tokens=1000,
-                temperature=0.25,  # Be precise
+                max_tokens=5000,
+                temperature=0.25,
                 messages=[{"role": "user", "content": prompt}],
                 response_model=FixedLine,
             )

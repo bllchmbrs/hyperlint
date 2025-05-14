@@ -65,7 +65,7 @@ def test_edit_command_help(runner):
     """Test the help output for the edit command."""
     result = runner.invoke(app, ["edit", "--help"])
     assert result.exit_code == 0
-    assert "Run all configured editors on files" in result.stdout
+    assert "Run multiple editors on files" in result.stdout
     assert "--editors" in result.stdout
     assert "--exclude" in result.stdout
     assert "--parallel" in result.stdout

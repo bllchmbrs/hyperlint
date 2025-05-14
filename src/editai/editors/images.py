@@ -59,6 +59,10 @@ class InternalImage(BaseModel):
     """Represents an image file found for the article."""
 
     path: Path
+    caption_model: str = "claude-3-haiku-20240307"
+    name_model: str = "claude-3-haiku-20240307"
+    location_model: str = "claude-3-opus-20240229"
+    amble_model: str = "claude-3-haiku-20240307"
 
     def _get_image_content(self, b64_encode: bool = True) -> str | bytes:
         """Reads image content, optionally base64 encoding it."""
@@ -105,7 +109,7 @@ class InternalImage(BaseModel):
             ]
 
             response: ImageCaption = patched_client(
-                model="claude-3-haiku-20240307",
+                model=self.caption_model,
                 max_tokens=400,
                 messages=messages,
                 response_model=ImageCaption,
@@ -156,7 +160,7 @@ class InternalImage(BaseModel):
             ]
 
             response: ImageName = patched_client(
-                model="claude-3-haiku-20240307",
+                model=self.name_model,
                 max_tokens=400,
                 messages=messages,
                 response_model=ImageName,
@@ -236,7 +240,7 @@ class InternalImage(BaseModel):
             ]
 
             response: InsertLocation = patched_client(
-                model="claude-3-opus-20240229",  # Using Opus for potentially better reasoning
+                model=self.location_model,
                 max_tokens=500,
                 messages=messages,
                 response_model=InsertLocation,
@@ -317,7 +321,7 @@ class InternalImage(BaseModel):
             ]
 
             response: ImageAmbles = patched_client(
-                model="claude-3-haiku-20240307",
+                model=self.amble_model,
                 max_tokens=500,
                 messages=messages,
                 response_model=ImageAmbles,
@@ -428,6 +432,22 @@ class ImageAdditionEditor(BaseEditor):
     image_folder_path: Path = Field(
         description="The path to the subfolder containing images within the article directory.",
     )
+    caption_model: str = Field(
+        default="claude-3-haiku-20240307",
+        description="The AI model to use for generating image captions.",
+    )
+    name_model: str = Field(
+        default="claude-3-haiku-20240307",
+        description="The AI model to use for generating image names.",
+    )
+    location_model: str = Field(
+        default="claude-3-opus-20240229",
+        description="The AI model to use for determining image insertion locations.",
+    )
+    amble_model: str = Field(
+        default="claude-3-haiku-20240307",
+        description="The AI model to use for generating preamble and postamble text.",
+    )
 
     def _get_image_dir(self) -> Optional[str]:
         """Locates the directory containing images for the article."""
@@ -472,7 +492,13 @@ class ImageAdditionEditor(BaseEditor):
 
         for file_path_obj in image_files_paths:
             original_path_str = str(file_path_obj)
-            image = InternalImage(path=file_path_obj)
+            image = InternalImage(
+                path=file_path_obj,
+                caption_model=self.caption_model,
+                name_model=self.name_model,
+                location_model=self.location_model,
+                amble_model=self.amble_model
+            )
             new_name = image._generate_image_name()
 
             if new_name:

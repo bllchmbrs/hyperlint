@@ -1,4 +1,3 @@
-import re
 from typing import List
 
 import instructor
@@ -29,14 +28,14 @@ def get_search_terms(text: str) -> List[str]:
     <example>
     This is a technical blog post or tutorial, so focus on the more technical tools, concepts, and terms that we should link to and search for.
 
-    For instance, if the code includes 
+    For instance, if the code includes
     ```python
     from mcp.server.fastmcp import FastMCP
     ````
 
-    Then good search terms would be "FastMCP" and "MCP Server". 
+    Then good search terms would be "FastMCP" and "MCP Server".
     </example>
-    
+
     Rules:
     - Focus in particular on the names from the imported lobraries and their names.
     - Don't include concepts that aren't related to the technical content of the text. For instance, if the demo is about whales, don't include "whales" in the search terms.

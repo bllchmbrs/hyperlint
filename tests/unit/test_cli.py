@@ -335,6 +335,10 @@ class TestCLI:
         mock_image_editor.assert_called_once_with(
             path=Path(str(test_file)),
             image_folder_path=Path(str(image_dir)),
-            image_url_prefix='/custom/images'
+            image_url_prefix='/custom/images',
+            caption_model='claude-3-haiku-20240307',
+            name_model='claude-3-haiku-20240307',
+            location_model='claude-3-opus-20240229',
+            amble_model='claude-3-haiku-20240307'
         )
         mock_instance.generate_v2.assert_called_once()

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 import diskcache
 import instructor
@@ -6,7 +6,7 @@ from litellm import completion
 from loguru import logger
 from pydantic import BaseModel, Field, HttpUrl
 
-from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
+from .core import BaseEditor, ReplaceLineFixableIssue
 
 cache = diskcache.Cache("./data/cache/editing")
 patched_client = instructor.from_litellm(completion=completion)
@@ -97,25 +97,25 @@ class ArbitraryLinkEditor(BaseEditor):
     ) -> Optional[LinkPlacement]:
         """Find the best placement for a link in the document."""
         prompt = f"""You are an expert technical writer.
-        
+
         You are given a link URL and description, and text with line numbers.
-        
+
         Your job is to find the best location in the text to place this link naturally.
-        
+
         <text_with_line_numbers>
         {text_with_line_numbers}
         </text_with_line_numbers>
-        
+
         <link>
         URL: {link.url}
         Description: {link.description}
         </link>
-        
+
         Find the single best line where this link would be most relevant and helpful.
         The link should enhance the reader's understanding and be placed naturally in the text.
         You must only point to lines of text, not code lines or empty lines.
         NEVER MODIFY CODE LINES.
-        
+
         Return your response as a JSON with the following structure:
         {{
           "line_number": The line number to place the link (as an integer),
@@ -176,18 +176,18 @@ class ArbitraryLinkEditor(BaseEditor):
     def generate_link_insertion(self, link: ArbitraryLink, original_text: str) -> str:
         """Generate a rewritten line with the link naturally inserted."""
         prompt = f"""You are an expert technical writer.
-        
+
         You need to rewrite this line to naturally include a link in Markdown format.
-        
+
         <original_line>
         {original_text}
         </original_line>
-        
+
         <link>
         URL: {link.url}
         Description: {link.description}
         </link>
-        
+
         Rewrite the line to include the link in a natural way. Use Markdown format for the link: [text](url).
         The link should be seamlessly integrated into the text.
         Return only the rewritten line without any explanation.

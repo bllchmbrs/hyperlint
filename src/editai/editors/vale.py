@@ -8,13 +8,7 @@ from typing import List, Optional
 from loguru import logger
 from pydantic import FilePath
 
-from .core import (
-    BaseEditor,
-    DeleteLineIssue,
-    InsertLineIssue,
-    LineIssue,
-    ReplaceLineFixableIssue,
-)
+from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
 
 
 @dataclass
