@@ -84,7 +84,7 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
         vale_path = subprocess.check_output(["which", "vale"]).decode().strip()
 
         # Run vale with the correct working directory and environment
-        result = subprocess.run(
+        vale_output = subprocess.run(
             [vale_path, "--config", vale_config_path, "--output=JSON", temp_file_path],
             capture_output=True,
             text=True,
@@ -92,9 +92,9 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
             env=dict(os.environ, PATH=os.environ.get("PATH", "")),
         )
 
-        logger.success("Vale Result", result=result)
+        logger.success("Vale Result", result=vale_output)
         # Parse the JSON output
-        as_json = json.loads(result.stdout)
+        as_json = json.loads(vale_output.stdout)
         logger.success("Vale JSON", json=as_json)
 
         # Convert JSON alerts into ValeAlert objects

@@ -1,17 +1,7 @@
-from .arbitrary_links import ArbitraryLinkEditor
+"""Editors module contains the different editors that can be used by EditAI."""
+
 from .core import BaseEditor
-from .custom_rules import RulesEditor
-from .folder_processor import FolderProcessor
-from .images import ImageAdditionEditor
-from .links import InternalLinkEditor
+from .custom_rules import CustomRuleEditor
 from .vale import ValeEditor
 
-__all__ = [
-    "ArbitraryLinkEditor",
-    "BaseEditor",
-    "RulesEditor",
-    "FolderProcessor",
-    "ImageAdditionEditor",
-    "InternalLinkEditor",
-    "ValeEditor",
-]
+__all__ = ["BaseEditor", "CustomRuleEditor", "ValeEditor"]

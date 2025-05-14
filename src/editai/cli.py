@@ -1,22 +1,14 @@
 import concurrent.futures
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List
 
 import typer
 from loguru import logger
-from smolcrawl import list_indices as list_indices_from_smolcrawl
-from typing import Optional
 
 from .config import SimpleConfig, create_default_config, find_config_file
-from .editors.arbitrary_links import ArbitraryLinkEditor
-from .editors.custom_rules import RulesEditor
-from .editors.folder_processor import FolderProcessor
-from .editors.images import ImageAdditionEditor
-from .editors.links import InternalLinkEditor
 from .editors.vale import ValeEditor
-from .utils import get_vale_config_path, guess_image_folder
+from .utils import get_vale_config_path
 
 app = typer.Typer(
     help="""
@@ -24,14 +16,12 @@ EditAI: A CLI tool for editing and improving Markdown documentation.
 
 Available Commands:
 - vale: Apply Vale linting to markdown files
-- links: Add internal links between documents
-- add-images: Insert images into documents
 - custom-rules: Apply AI-powered editing rules
 - list-rules: Show available custom rules
 - view-rule: Display contents of a specific rule
 - create-rule: Create a new custom rule
 """,
-    no_args_is_help=True
+    no_args_is_help=True,
 )
 
 
@@ -46,7 +36,7 @@ def vale(
     vale_config_path: str | None = None,
     recursive: bool = False,
     include_pattern: str = "*.md",
-    exclude_patterns: List[str] = None,
+    exclude_patterns: List[str] = [],
     dry_run: bool = False,
 ):
     """
@@ -291,9 +281,6 @@ def add_images(
             print(processed_content)
 
 
-
-
-
 @app.command()
 def arbitrary_links(path: str):
     """
@@ -331,8 +318,8 @@ def arbitrary_links(path: str):
 def custom_rules(
     path: str,
     rules_directory: str,
-    include_rules: Optional[List[str]] = None,
-    exclude_rules: Optional[List[str]] = None,
+    exclude_patterns: List[str] = [],
+    exclude_patterns: List[str] = [],
     recursive: bool = False,
     include_pattern: str = "*.md",
     exclude_patterns: List[str] = None,

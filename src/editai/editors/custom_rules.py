@@ -145,13 +145,13 @@ class RulesEditor(BaseEditor):
                 f"Processing text with rule '{rule_name}' using model: {self.model}"
             )
 
-            response = patched_client.completions.create(
+            response = patched_client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2048,
             )
 
-            processed_text = response.content
+            processed_text = response.choices[0].message.content
             logger.success(f"Successfully processed text with rule: {rule_name}")
             return processed_text
 

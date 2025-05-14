@@ -6,14 +6,6 @@ from loguru import logger
 from pydantic import BaseModel, DirectoryPath, Field, FilePath
 
 
-class AIConfig(BaseModel):
-    model: str = "openai/o3-mini-2025-01-31"
-    fallback_model: str = "anthropic/claude-3-haiku-20240307"
-    temperature: float = Field(0.25, ge=0.0, le=1.0)
-    max_tokens: int = Field(2048, gt=0)
-    cache_enabled: bool = True
-
-
 class ValeConfig(BaseModel):
     config_path: FilePath = Field(default=Path("./.vale.ini"))
 
@@ -25,43 +17,20 @@ class CustomRulesConfig(BaseModel):
     )
 
 
-class ImageModelConfig(BaseModel):
-    enabled: bool = True
-    model: str = "claude-3-haiku-20240307"
-
-
-class ImageConfig(BaseModel):
-    default_url_prefix: str = "/images"
-    caption_generation: ImageModelConfig = Field(default_factory=ImageModelConfig)
-    location_detection: ImageModelConfig = Field(
-        default_factory=lambda: ImageModelConfig(model="claude-3-opus-20240229")
-    )
-    name_generation: ImageModelConfig = Field(default_factory=ImageModelConfig)
-    amble_generation: ImageModelConfig = Field(default_factory=ImageModelConfig)
-
-
-class LinksConfig(BaseModel):
-    default_indices: List[str] = Field(default_factory=lambda: ["docs-index"])
-    auto_create_indices: bool = True
-
-
 class SimpleConfig(BaseModel):
     """Configuration container with validation"""
 
     # Editor configurations
-    ai: AIConfig = Field(default_factory=AIConfig)
     vale: ValeConfig = Field(default_factory=ValeConfig)
     custom_rules: CustomRulesConfig = Field(default_factory=CustomRulesConfig)
-    images: ImageConfig = Field(default_factory=ImageConfig)
-    links: LinksConfig = Field(default_factory=LinksConfig)
 
     # Global settings
     recursive: bool = True
     dry_run: bool = False
     include_pattern: str = "*.md"
     exclude_patterns: List[str] = Field(default_factory=list)
-    enabled_editors: List[Literal["ai", "vale", "custom_rules", "images", "links"]] = (
-        Field(default_factory=lambda: ["ai", "vale", "custom_rules", "images", "links"])
+    enabled_editors: List[Literal["vale", "custom_rules"]] = (
+        Field(default_factory=lambda: ["vale", "custom_rules"])
     )
 
     @classmethod
