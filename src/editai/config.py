@@ -12,9 +12,7 @@ class ValeConfig(BaseModel):
 
 class CustomRulesConfig(BaseModel):
     rules_directory: DirectoryPath = Field(default=Path("./rules"))
-    enabled_rules: List[str] = Field(
-        default_factory=lambda: ["passive_voice", "bullet_consistency"]
-    )
+    enabled_rules: List[str] = Field(default_factory=lambda: ["all"])
 
 
 class SimpleConfig(BaseModel):
@@ -29,8 +27,8 @@ class SimpleConfig(BaseModel):
     dry_run: bool = False
     include_pattern: str = "*.md"
     exclude_patterns: List[str] = Field(default_factory=list)
-    enabled_editors: List[Literal["vale", "custom_rules"]] = (
-        Field(default_factory=lambda: ["vale", "custom_rules"])
+    enabled_editors: List[Literal["vale", "custom_rules"]] = Field(
+        default_factory=lambda: ["vale", "custom_rules"]
     )
 
     @classmethod
