@@ -9,18 +9,26 @@ from .utils import get_vale_config_path
 
 app = typer.Typer(
     help="""
-EditAI: A CLI tool for editing and improving Markdown files.
+Hyperlint: A CLI tool for editing and improving Markdown files.
 
 Available Commands:
 - vale: Apply Vale linting to a markdown file
 - rules: Manage and apply custom editing rules
-- config: Manage EditAI configuration
+- config: Manage Hyperlint configuration
 """,
     no_args_is_help=True,
 )
 
 
-@app.command(name="apply-vale")
+# Create rules subcommand group
+edit_app = typer.Typer(
+    help="Apply rules",
+    no_args_is_help=True,
+)
+app.add_typer(edit_app, name="apply")
+
+
+@edit_app.command(name="vale")
 def vale(
     path: str,
     vale_config_path: str | None = None,
@@ -31,13 +39,13 @@ def vale(
 
     Examples:
         # Process a file
-        editai vale docs/guide.md
+        hyperlint vale docs/guide.md
 
         # Process with custom Vale configuration
-        editai vale guide.md --vale-config-path .vale.ini
+        hyperlint vale guide.md --vale-config-path .vale.ini
 
         # Preview changes without applying them
-        editai vale README.md --dry-run
+        hyperlint vale README.md --dry-run
     """
     path_obj = Path(path)
 
@@ -64,15 +72,7 @@ def vale(
         print(processed_content)
 
 
-# Create rules subcommand group
-rules_app = typer.Typer(
-    help="Manage and apply custom editing rules",
-    no_args_is_help=True,
-)
-app.add_typer(rules_app, name="manage-rules")
-
-
-@app.command(name="apply-rules")
+@edit_app.command(name="rules")
 def apply_rules(
     path: str,
     rules_directory: str,
@@ -88,16 +88,16 @@ def apply_rules(
 
     Examples:
         # Apply all rules to a file
-        editai rules apply docs/guide.md rules/
+        hyperlint rules apply docs/guide.md rules/
 
         # Apply specific rules to a file
-        editai rules apply README.md rules/ --include-rules passive_voice,bullet_consistency
+        hyperlint rules apply README.md rules/ --include-rules passive_voice,bullet_consistency
 
         # Exclude specific rules
-        editai rules apply docs/guide.md rules/ --exclude-rules deprecated_terms
+        hyperlint rules apply docs/guide.md rules/ --exclude-rules deprecated_terms
 
         # Preview rule application without making changes
-        editai rules apply docs/guide.md rules/ --dry-run
+        hyperlint rules apply docs/guide.md rules/ --dry-run
     """
     path_obj = Path(path)
     rules_dir_obj = Path(rules_directory)
@@ -137,6 +137,14 @@ def apply_rules(
         print(processed_content)
 
 
+# Create rules subcommand group
+rules_app = typer.Typer(
+    help="Manage and apply custom editing rules",
+    no_args_is_help=True,
+)
+app.add_typer(rules_app, name="manage-rules")
+
+
 @rules_app.command(name="list")
 def list_rules(rules_directory: str):
     """
@@ -144,10 +152,10 @@ def list_rules(rules_directory: str):
 
     Examples:
         # List all rules in the default rules directory
-        editai rules list rules/
+        hyperlint rules list rules/
 
         # List rules in a custom directory
-        editai rules list custom-rules/
+        hyperlint rules list custom-rules/
     """
     rules_dir_obj = Path(rules_directory)
 
@@ -175,10 +183,10 @@ def view_rule(rules_directory: str, rule_name: str):
 
     Examples:
         # View a specific rule by name (with or without .md extension)
-        editai rules view rules/ passive_voice
+        hyperlint rules view rules/ passive_voice
 
         # View a rule in a custom directory
-        editai rules view custom-rules/ bullet_consistency.md
+        hyperlint rules view custom-rules/ bullet_consistency.md
     """
     rules_dir_obj = Path(rules_directory)
 
@@ -211,10 +219,10 @@ def create_rule(rules_directory: str, rule_name: str):
 
     Examples:
         # Create a new rule in the default rules directory
-        editai rules create rules/ passive_voice
+        hyperlint rules create rules/ passive_voice
 
         # Create a rule in a custom directory (extension optional)
-        editai rules create custom-rules/ bullet_consistency.md
+        hyperlint rules create custom-rules/ bullet_consistency.md
     """
     rules_dir_obj = Path(rules_directory)
 

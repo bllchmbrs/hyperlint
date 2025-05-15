@@ -12,7 +12,7 @@ class ValeConfig(BaseModel):
 
 class CustomRulesConfig(BaseModel):
     rules_directory: DirectoryPath = Field(default=Path("./rules"))
-    enabled_rules: List[str] = Field(default_factory=lambda: []) # all rules
+    enabled_rules: List[str] = Field(default_factory=lambda: [])  # all rules
 
 
 class SimpleConfig(BaseModel):
@@ -47,7 +47,6 @@ class SimpleConfig(BaseModel):
             logger.error(f"Error loading config: {e}")
             return cls()
 
-
     def merge_with_cli(self, cli_args: Dict[str, Any]) -> Dict[str, Any]:
         """Merge CLI arguments with config values"""
         # Start with all current settings as a dict
@@ -64,14 +63,12 @@ class SimpleConfig(BaseModel):
         return merged
 
 
-
-
 def find_config_file() -> Optional[Path]:
     """Find configuration file in standard locations"""
     search_paths = [
-        Path.cwd() / "editai.yaml",
-        Path.cwd() / ".editai.yaml",
-        Path.home() / ".config" / "editai" / "config.yaml",
+        Path.cwd() / "hyperlint.yaml",
+        Path.cwd() / ".hyperlint.yaml",
+        Path.home() / ".config" / "hyperlint" / "config.yaml",
     ]
 
     for path in search_paths:
@@ -80,7 +77,7 @@ def find_config_file() -> Optional[Path]:
     return None
 
 
-def create_default_config(path: Path = Path.cwd() / "editai.yaml") -> Path:
+def create_default_config(path: Path = Path.cwd() / "hyperlint.yaml") -> Path:
     """Create a default configuration file"""
 
     # Create a default config and dump it to YAML
@@ -88,7 +85,7 @@ def create_default_config(path: Path = Path.cwd() / "editai.yaml") -> Path:
     yaml_str = yaml.dump(config.model_dump(), sort_keys=False)
 
     # Add a header comment
-    final_content = "# EditAI Configuration\n" + yaml_str
+    final_content = "# Hyperlint Configuration\n" + yaml_str
 
     with open(path, "w") as f:
         f.write(final_content)

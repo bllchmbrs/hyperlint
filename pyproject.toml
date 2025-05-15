@@ -1,5 +1,5 @@
 [project]
-name = "editai"
+name = "hyperlint"
 version = "0.1.0"
 description = "A Python CLI tool for editing and improving Markdown documentation"
 readme = "README.md"
@@ -26,7 +26,7 @@ test = [
 ]
 
 [project.scripts]
-editai = "editai.cli:app"
+hyperlint = "hyperlint.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -35,7 +35,7 @@ python_functions = "test_*"
 
 [tool.pyright]
 venvPath = "."
-venv='.venv'
+venv = '.venv'
 
 [dependency-groups]
 dev = [
