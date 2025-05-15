@@ -981,6 +981,7 @@ test = [
 dev = [
     { name = "jupyterlab" },
     { name = "mypy" },
+    { name = "pytest" },
     { name = "ruff" },
     { name = "types-pygments" },
     { name = "types-pyyaml" },
@@ -1009,6 +1010,7 @@ provides-extras = ["test"]
 dev = [
     { name = "jupyterlab", specifier = ">=4.4.2" },
     { name = "mypy", specifier = ">=1.15.0" },
+    { name = "pytest", specifier = ">=8.3.5" },
     { name = "ruff", specifier = ">=0.11.10" },
     { name = "types-pygments", specifier = ">=2.19.0.20250514" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20250402" },
