@@ -1,7 +1,6 @@
 import difflib
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from dataclasses import dataclass
 from typing import Dict, List
 
 import diskcache
@@ -22,13 +21,11 @@ class FixedLine(BaseModel):
     replacement_content: str = Field(description="The replacement content for the line")
 
 
-@dataclass(frozen=True, order=True)
-class LineIssue:
+class LineIssue(BaseModel):
     line: int
     issue_message: List[str]
 
 
-@dataclass(frozen=True, order=True)
 class ReplaceLineFixableIssue(LineIssue):
     existing_content: str
 
@@ -80,13 +77,11 @@ Rewrite the entire line resolving the issue description. It is imperative to rew
             return self.existing_content
 
 
-@dataclass(frozen=True, order=True)
-class InsertLineIssue:
+class InsertLineIssue(BaseModel):
     line: int
     insert_content: str
 
 
-@dataclass(frozen=True, order=True)
 class DeleteLineIssue(ReplaceLineFixableIssue):
     def fix(self) -> str:
         return DELETE_LINE_MESSAGE
