@@ -1,4 +1,4 @@
-"""Editors module contains the different editors that can be used by EditAI."""
+"""Editors module contains the different editors that can be used by hyperlint."""
 
 from .core import BaseEditor
 from .custom_rules import RulesEditor

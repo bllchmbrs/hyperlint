@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from editai.editors.custom_rules import RulesEditor, RulesViolation
+from hyperlint.editors.custom_rules import RulesEditor, RulesViolation
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ class TestCustomRuleEditor:
 
         assert len(filtered) == 0
 
-    @mock.patch("editai.editors.custom_rules.get_issues")
+    @mock.patch("hyperlint.editors.custom_rules.get_issues")
     def test_apply_rule(self, mock_get_issues, rules_directory, sample_markdown_file):
         """Test apply_rule with a basic rule."""
         # Mock get_issues to return a violation
@@ -158,7 +158,7 @@ class TestCustomRuleEditor:
         assert len(editor.replacements) == 1
         assert "test_rule" in editor.applied_rules
 
-    @mock.patch("editai.editors.custom_rules.get_issues")
+    @mock.patch("hyperlint.editors.custom_rules.get_issues")
     def test_apply_rule_dry_run(
         self, mock_get_issues, rules_directory, sample_markdown_file
     ):
@@ -200,7 +200,7 @@ class TestCustomRuleEditor:
         assert numbered_text.startswith("1: # Test Document")
         assert "3: This file contains foo which should be replaced." in numbered_text
 
-    @mock.patch("editai.editors.custom_rules.get_issues")
+    @mock.patch("hyperlint.editors.custom_rules.get_issues")
     def test_apply_rule_with_edit_lines(
         self, mock_get_issues, rules_directory, sample_markdown_file
     ):
@@ -224,7 +224,7 @@ class TestCustomRuleEditor:
         )
         assert "test_rule" in editor.applied_rules
 
-    @mock.patch("editai.editors.custom_rules.get_issues")
+    @mock.patch("hyperlint.editors.custom_rules.get_issues")
     def test_collect_issues(
         self, mock_get_issues, rules_directory, sample_markdown_file
     ):
@@ -271,7 +271,7 @@ class TestCustomRuleEditor:
         assert len(editor.applied_rules) == 3
         assert set(editor.applied_rules) == {"test_rule", "passive_voice", "formatting"}
 
-    @mock.patch("editai.editors.custom_rules.get_issues")
+    @mock.patch("hyperlint.editors.custom_rules.get_issues")
     def test_apply_rule_with_multiple_resolutions(
         self, mock_get_issues, rules_directory, sample_markdown_file
     ):

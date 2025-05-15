@@ -1,5 +1,4 @@
-
-from editai.editors.core import (
+from hyperlint.editors.core import (
     BaseEditor,
     DeleteLineIssue,
     InsertLineIssue,

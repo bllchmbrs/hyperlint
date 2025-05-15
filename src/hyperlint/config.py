@@ -6,14 +6,16 @@ from loguru import logger
 from pydantic import BaseModel, DirectoryPath, Field, FilePath
 
 DEFAULT_CONFIG_PATH = Path.cwd() / ".hyperlint.yaml"
+DEFAULT_INI_PATH = Path.cwd() / ".vale.ini"
+DEFAULT_CUSTOM_RULES_PATH = Path.cwd() / "rules"
 
 
 class ValeConfig(BaseModel):
-    config_path: FilePath = Field(default=Path("./.vale.ini"))
+    config_path: FilePath = Field(default=Path(DEFAULT_INI_PATH))
 
 
 class CustomRulesConfig(BaseModel):
-    rules_directory: DirectoryPath = Field(default=Path("./rules"))
+    rules_directory: DirectoryPath = Field(default=Path(DEFAULT_CUSTOM_RULES_PATH))
     enabled_rules: List[str] = Field(default_factory=lambda: [])  # all rules
 
 
@@ -79,7 +81,7 @@ def find_config_file() -> Optional[Path]:
     return None
 
 
-def create_default_config(path: Path = Path.cwd() / "hyperlint.yaml") -> None:
+def create_default_config(path: Path = DEFAULT_CONFIG_PATH) -> None:
     """Create a default configuration file"""
 
     # Create a default config and dump it to YAML

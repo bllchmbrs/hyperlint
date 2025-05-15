@@ -1,3 +1,4 @@
+import difflib
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -206,3 +207,21 @@ class BaseEditor(ABC, BaseModel):
 
         self.text = "\n".join(final_lines)
         return self.get_text()
+
+    def update_file(self):
+        path = self.path
+        final_content = self.generate_v2()
+
+        with open(path, "w") as f:
+            f.write(final_content)
+
+        return path
+
+    def dry_run(self):
+        path = self.path
+        original_text = self.get_text()
+        final_content = self.generate_v2()
+
+        difflib.unified_diff(original_text.splitlines(), final_content.splitlines())
+        print(final_content)
+        return path

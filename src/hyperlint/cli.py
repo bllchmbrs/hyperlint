@@ -3,10 +3,9 @@ from typing import List
 
 import typer
 
-from .config import DEFAULT_CONFIG_PATH, create_default_config
+from .config import DEFAULT_CONFIG_PATH, DEFAULT_INI_PATH, create_default_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
-from .utils import get_vale_config_path
 
 app = typer.Typer(
     help="""
@@ -51,26 +50,16 @@ def vale(
     path_obj = Path(path)
 
     # Determine Vale config path
-    vale_config_path_final: Path
-    if vale_config_path is None:
-        maybe_path = get_vale_config_path()
-        if maybe_path is None:
-            print("Error: Vale config path could not be determined.")
-            raise typer.Exit(code=1)
-        vale_config_path_final = Path(maybe_path)
-    else:
+    if vale_config_path:
         vale_config_path_final = Path(vale_config_path)
+    else:
+        vale_config_path_final = DEFAULT_INI_PATH
 
     editor = ValeEditor(path=path_obj, vale_config_path=vale_config_path_final)
-    processed_content = editor.generate_v2()
-
-    if not dry_run:
-        with open(path_obj, "w") as f:
-            f.write(processed_content)
-        print(f"Processed file: {path_obj}")
+    if dry_run:
+        editor.dry_run()
     else:
-        print(f"Dry run - would update {path_obj}")
-        print(processed_content)
+        editor.update_file()
 
 
 @edit_app.command(name="rules")
@@ -127,15 +116,10 @@ def apply_rules(
         dry_run=dry_run,
     )
 
-    processed_content = editor.generate_v2()
-
-    if not dry_run:
-        with open(path_obj, "w") as f:
-            f.write(processed_content)
-        print(f"Processed file: {path_obj}")
+    if dry_run:
+        editor.dry_run()
     else:
-        print(f"Dry run - would update {path_obj}")
-        print(processed_content)
+        editor.update_file()
 
 
 # Create rules subcommand group

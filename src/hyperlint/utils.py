@@ -1,4 +1,3 @@
-import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -210,10 +209,6 @@ def count_adjectives(
 
     # Count adjective frequencies
     return dict(Counter(filtered_adjectives).most_common(20))
-
-
-def get_vale_config_path() -> str | None:
-    return os.getenv("VALE_CONFIG_PATH")
 
 
 def find_markdown_files(

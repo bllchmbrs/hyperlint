@@ -1,6 +1,6 @@
-# EditAI Tests
+# hyperlint Tests
 
-This directory contains tests for the EditAI project.
+This directory contains tests for the hyperlint project.
 
 ## Current Test Coverage
 
@@ -37,12 +37,12 @@ pytest
 
 To run tests with coverage:
 ```bash
-pytest --cov=editai tests/
+pytest --cov=hyperlint tests/
 ```
-
+ptest
 To generate a coverage report:
 ```bash
-pytest --cov=editai --cov-report=html tests/
+pytest --cov=hyperlint --cov-report=html tests/
 ```
 
 ## Test Dependencies
@@ -59,7 +59,7 @@ uv pip install -e ".[test]"
 ### High Priority
 
 1. Add tests for ArbitraryLinkEditor
-2. Add tests for ImageAdditionEditor 
+2. Add tests for ImageAdditionEditor
 3. Add tests for LinkEditor
 4. Add tests for ValeEditor
 5. Improve tests for utility functions
