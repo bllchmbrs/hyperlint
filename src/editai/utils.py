@@ -2,7 +2,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Callable, Set
+from typing import Callable, Dict, List, Set
 
 import spacy
 
@@ -217,9 +217,9 @@ def get_vale_config_path() -> str | None:
 
 
 def find_markdown_files(
-    directory_path: Path, 
-    include_pattern: str = "*.md", 
-    exclude_patterns: List[str] = None
+    directory_path: Path,
+    include_pattern: str = "*.md",
+    exclude_patterns: List[str] | None = None,
 ) -> List[Path]:
     """
     Find markdown files in a directory (and its subdirectories) that match the include pattern
@@ -234,23 +234,25 @@ def find_markdown_files(
         A list of file paths matching the criteria.
     """
     exclude_patterns = exclude_patterns or []
-    
+
     # Ensure the directory exists
     if not directory_path.exists() or not directory_path.is_dir():
-        raise ValueError(f"Directory does not exist or is not a directory: {directory_path}")
-    
+        raise ValueError(
+            f"Directory does not exist or is not a directory: {directory_path}"
+        )
+
     # Find all files matching the include pattern
     all_files = list(directory_path.glob(f"**/{include_pattern}"))
-    
+
     # Apply exclude patterns
     if exclude_patterns:
         excluded_files: Set[Path] = set()
         for pattern in exclude_patterns:
             excluded_files.update(directory_path.glob(f"**/{pattern}"))
-        
+
         # Filter out excluded files
         return [f for f in all_files if f not in excluded_files]
-    
+
     return all_files
 
 
@@ -258,8 +260,8 @@ def process_files_in_directory(
     directory_path: Path,
     processor_func: Callable[[Path], str],
     include_pattern: str = "*.md",
-    exclude_patterns: List[str] = None,
-    dry_run: bool = False
+    exclude_patterns: List[str] | None = None,
+    dry_run: bool = False,
 ) -> Dict[Path, str]:
     """
     Process all matching files in a directory using the provided processor function.
@@ -286,11 +288,12 @@ def process_files_in_directory(
 
             # Write the processed content back to the file if not in dry run mode
             if not dry_run and processed_content:
-                with open(file_path, 'w') as f:
+                with open(file_path, "w") as f:
                     f.write(processed_content)
         except Exception as e:
             # Log the error and continue with the next file
             from loguru import logger
+
             logger.error(f"Error processing file {file_path}: {e}")
 
     return results
@@ -301,18 +304,18 @@ def guess_image_folder(file_path: Path) -> Path:
 
     if file_path.is_dir():
         # Check for common image directory names
-        for img_dir in ['images', 'assets', 'img', 'pictures']:
+        for img_dir in ["images", "assets", "img", "pictures"]:
             candidate = file_path / img_dir
             if candidate.exists():
                 return candidate
         # Default to creating images directory
-        return file_path / 'images'
+        return file_path / "images"
     else:
         # For single files, look in parent directory
         parent = file_path.parent
-        for img_dir in ['images', 'assets', 'img', 'pictures']:
+        for img_dir in ["images", "assets", "img", "pictures"]:
             candidate = parent / img_dir
             if candidate.exists():
                 return candidate
         # Default to creating images directory in parent
-        return parent / 'images'
+        return parent / "images"

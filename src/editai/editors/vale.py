@@ -47,7 +47,7 @@ class ValeFileReport:
 def check_vale_installation() -> bool:
     try:
         # Run 'vale --version' and capture the output
-        result = subprocess.run(
+        _ = subprocess.run(
             ["vale", "--version"],
             check=True,
             stdout=subprocess.PIPE,
