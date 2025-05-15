@@ -12,7 +12,7 @@ class ValeConfig(BaseModel):
 
 class CustomRulesConfig(BaseModel):
     rules_directory: DirectoryPath = Field(default=Path("./rules"))
-    enabled_rules: List[str] = Field(default_factory=lambda: ["all"])
+    enabled_rules: List[str] = Field(default_factory=lambda: []) # all rules
 
 
 class SimpleConfig(BaseModel):
@@ -23,10 +23,8 @@ class SimpleConfig(BaseModel):
     custom_rules: CustomRulesConfig = Field(default_factory=CustomRulesConfig)
 
     # Global settings
-    recursive: bool = True
+
     dry_run: bool = False
-    include_pattern: str = "*.md"
-    exclude_patterns: List[str] = Field(default_factory=list)
     enabled_editors: List[Literal["vale", "custom_rules"]] = Field(
         default_factory=lambda: ["vale", "custom_rules"]
     )
@@ -49,11 +47,6 @@ class SimpleConfig(BaseModel):
             logger.error(f"Error loading config: {e}")
             return cls()
 
-    def get_editor_config(self, editor_name: str) -> Dict[str, Any]:
-        """Get configuration for a specific editor"""
-        if editor_name not in self.enabled_editors:
-            return {}
-        return getattr(self, editor_name).model_dump()
 
     def merge_with_cli(self, cli_args: Dict[str, Any]) -> Dict[str, Any]:
         """Merge CLI arguments with config values"""
@@ -69,6 +62,8 @@ class SimpleConfig(BaseModel):
                     logger.warning(f"Unknown CLI argument: {key}")
 
         return merged
+
+
 
 
 def find_config_file() -> Optional[Path]:
