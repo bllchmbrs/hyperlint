@@ -5,6 +5,8 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, DirectoryPath, Field, FilePath
 
+DEFAULT_CONFIG_PATH = Path.cwd() / ".hyperlint.yaml"
+
 
 class ValeConfig(BaseModel):
     config_path: FilePath = Field(default=Path("./.vale.ini"))
@@ -77,7 +79,7 @@ def find_config_file() -> Optional[Path]:
     return None
 
 
-def create_default_config(path: Path = Path.cwd() / "hyperlint.yaml") -> Path:
+def create_default_config(path: Path = Path.cwd() / "hyperlint.yaml") -> None:
     """Create a default configuration file"""
 
     # Create a default config and dump it to YAML
@@ -89,5 +91,3 @@ def create_default_config(path: Path = Path.cwd() / "hyperlint.yaml") -> Path:
 
     with open(path, "w") as f:
         f.write(final_content)
-
-    return path

@@ -3,6 +3,7 @@ from typing import List
 
 import typer
 
+from .config import DEFAULT_CONFIG_PATH, create_default_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
 from .utils import get_vale_config_path
@@ -259,6 +260,20 @@ Example:
 # Add config subcommand for managing configurations
 config_app = typer.Typer()
 app.add_typer(config_app, name="config")
+
+
+@config_app.command(name="init")
+def init_config():
+    config_path = Path(DEFAULT_CONFIG_PATH)
+    if config_path.exists():
+        print(f"Error: Configuration already exists: {config_path}")
+        raise typer.Exit(code=1)
+    try:
+        create_default_config(config_path)
+        print(f"Created configuration: {config_path}")
+    except Exception as e:
+        print(f"Error creating configuration: {e}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
