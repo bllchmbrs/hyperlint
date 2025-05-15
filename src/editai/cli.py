@@ -13,16 +13,14 @@ EditAI: A CLI tool for editing and improving Markdown files.
 
 Available Commands:
 - vale: Apply Vale linting to a markdown file
-- custom-rules: Apply AI-powered editing rules to a file
-- list-rules: Show available custom rules
-- view-rule: Display contents of a specific rule
-- create-rule: Create a new custom rule
+- rules: Manage and apply custom editing rules
+- config: Manage EditAI configuration
 """,
     no_args_is_help=True,
 )
 
 
-@app.command()
+@app.command(name="apply-vale")
 def vale(
     path: str,
     vale_config_path: str | None = None,
@@ -66,8 +64,16 @@ def vale(
         print(processed_content)
 
 
-@app.command()
-def custom_rules(
+# Create rules subcommand group
+rules_app = typer.Typer(
+    help="Manage and apply custom editing rules",
+    no_args_is_help=True,
+)
+app.add_typer(rules_app, name="manage-rules")
+
+
+@app.command(name="apply-rules")
+def apply_rules(
     path: str,
     rules_directory: str,
     include_rules: List[str] = [],
@@ -82,24 +88,21 @@ def custom_rules(
 
     Examples:
         # Apply all rules to a file
-        editai custom-rules docs/guide.md rules/
+        editai rules apply docs/guide.md rules/
 
         # Apply specific rules to a file
-        editai custom-rules README.md rules/ --include-rules passive_voice,bullet_consistency
+        editai rules apply README.md rules/ --include-rules passive_voice,bullet_consistency
 
         # Exclude specific rules
-        editai custom-rules docs/guide.md rules/ --exclude-rules deprecated_terms
+        editai rules apply docs/guide.md rules/ --exclude-rules deprecated_terms
 
         # Preview rule application without making changes
-        editai custom-rules docs/guide.md rules/ --dry-run
+        editai rules apply docs/guide.md rules/ --dry-run
     """
     path_obj = Path(path)
     rules_dir_obj = Path(rules_directory)
 
     # Handle include_rules and exclude_rules list parsing
-    include_list = []
-    exclude_list = []
-
     include_list = []
     exclude_list = []
 
@@ -134,17 +137,17 @@ def custom_rules(
         print(processed_content)
 
 
-@app.command()
+@rules_app.command(name="list")
 def list_rules(rules_directory: str):
     """
     List all available rules in the directory.
 
     Examples:
         # List all rules in the default rules directory
-        editai list-rules rules/
+        editai rules list rules/
 
         # List rules in a custom directory
-        editai list-rules custom-rules/
+        editai rules list custom-rules/
     """
     rules_dir_obj = Path(rules_directory)
 
@@ -165,17 +168,17 @@ def list_rules(rules_directory: str):
         print(f"- {rule_path.stem}")
 
 
-@app.command()
+@rules_app.command(name="view")
 def view_rule(rules_directory: str, rule_name: str):
     """
     Display the content of a specific rule.
 
     Examples:
         # View a specific rule by name (with or without .md extension)
-        editai view-rule rules/ passive_voice
+        editai rules view rules/ passive_voice
 
         # View a rule in a custom directory
-        editai view-rule custom-rules/ bullet_consistency.md
+        editai rules view custom-rules/ bullet_consistency.md
     """
     rules_dir_obj = Path(rules_directory)
 
@@ -198,7 +201,7 @@ def view_rule(rules_directory: str, rule_name: str):
         raise typer.Exit(code=1)
 
 
-@app.command()
+@rules_app.command(name="create")
 def create_rule(rules_directory: str, rule_name: str):
     """
     Create a new empty rule file with a template.
@@ -208,10 +211,10 @@ def create_rule(rules_directory: str, rule_name: str):
 
     Examples:
         # Create a new rule in the default rules directory
-        editai create-rule rules/ passive_voice
+        editai rules create rules/ passive_voice
 
         # Create a rule in a custom directory (extension optional)
-        editai create-rule custom-rules/ bullet_consistency.md
+        editai rules create custom-rules/ bullet_consistency.md
     """
     rules_dir_obj = Path(rules_directory)
 
