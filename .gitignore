@@ -17,3 +17,5 @@ CLAUDE.md
 plans/
 repomix-output.xml
 old/
+dev.ipynb
+**/.ipynb_checkpoints

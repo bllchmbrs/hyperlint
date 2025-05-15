@@ -1,17 +1,54 @@
+import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal
 
 import diskcache
-import instructor
-from litellm import completion
+import dspy
 from loguru import logger
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from .core import BaseEditor, DeleteLineIssue, InsertLineIssue
+from .core import BaseEditor, DeleteLineIssue, InsertLineIssue, ReplaceLineFixableIssue
 
 # Setup cache and instructor
 cache = diskcache.Cache("./data/cache/rules_editor")
-patched_client = instructor.from_litellm(completion=completion)
+
+
+openapi_key = os.environ["OPENAI_API_KEY"]
+lm = dspy.LM("openai/gpt-4o-mini", api_key=openapi_key)
+
+
+class RulesViolation(BaseModel):
+    line_number: int
+    issue_message: str
+    resolution: Literal["edit_line", "delete_line", "flag_line"]
+
+
+class RulesViolations(dspy.Signature):
+    """Provide a list of violations to the supplied rule.
+
+    If a line can simply be edited to be correct, use the resolution:'edit_line'
+    if a line can be deleted entirely use the resolution: 'delete_line'
+    If a line or issue has a more nuanced problem that isn't straightforward to fix without guidance, use the resolution:'flag_line'
+
+    """
+
+    text_with_line_numbers: str = dspy.InputField()
+    rule_content: str = dspy.InputField()
+    rule_name: str = dspy.InputField()
+    rules_violations: List[RulesViolation] = dspy.OutputField()
+
+
+_get_issues = dspy.ChainOfThought(RulesViolations)
+_get_issues.set_lm(lm)
+
+
+def get_issues(text, rule_content, rule_name) -> List[RulesViolation]:
+    model_response = _get_issues(
+        text_with_line_numbers=text,
+        rule_content=rule_content,
+        rule_name=rule_name,
+    )
+    return model_response.rules_violations
 
 
 class RulesEditor(BaseEditor):
@@ -26,7 +63,6 @@ class RulesEditor(BaseEditor):
     include_rules: List[str] = Field(default_factory=list)
     exclude_rules: List[str] = Field(default_factory=list)
     applied_rules: List[str] = Field(default_factory=list)
-    model: str = "anthropic/claude-3-haiku-20240307"
     dry_run: bool = False
 
     def prerun_checks(self) -> bool:
@@ -106,61 +142,6 @@ class RulesEditor(BaseEditor):
 
         return filtered_rules
 
-    @cache.memoize()
-    def _process_text_with_rule(
-        self, text: str, rule_content: str, rule_name: str
-    ) -> Optional[str]:
-        """
-        Process text using AI according to a rule.
-
-        Args:
-            text: The text to process
-            rule_content: The content of the rule
-            rule_name: The name of the rule
-
-        Returns:
-            The processed text, or None if processing failed
-        """
-        prompt = f"""You are an expert editor following specific editing instructions.
-
-        Here is the text to edit:
-        <text>
-        {text}
-        </text>
-
-        Here is the editing rule to apply:
-        <rule name="{rule_name}">
-        {rule_content}
-        </rule>
-
-        Please follow these instructions exactly:
-        1. Apply the specified rule to the text
-        2. Return only the edited text without any comments or explanations
-        3. Make only the changes required by the rule
-        4. Preserve the overall structure and line breaks of the document
-        """
-
-        try:
-            logger.info(
-                f"Processing text with rule '{rule_name}' using model: {self.model}"
-            )
-
-            response = patched_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=2048,
-            )
-
-            processed_text = response.choices[0].message.content
-            logger.success(f"Successfully processed text with rule: {rule_name}")
-            return processed_text
-
-        except Exception as e:
-            logger.error(
-                f"Error processing text with rule '{rule_name}': {e}", exc_info=True
-            )
-            return None
-
     def apply_rule(self, rule_content: str, rule_name: str) -> None:
         """
         Apply a single rule to the document using AI.
@@ -169,85 +150,57 @@ class RulesEditor(BaseEditor):
             rule_content: The content of the rule file.
             rule_name: The name of the rule.
         """
-        text = self.get_text()
+        text = self.get_text_with_line_numbers()
+        line_lookup = self.get_line_number_lookup()
+        issues: List[RulesViolation] = get_issues(text, rule_content, rule_name)
 
-        # Process text with rule
-        corrected_text = self._process_text_with_rule(text, rule_content, rule_name)
-
-        if corrected_text is None:
-            logger.error(f"Failed to apply rule: {rule_name}")
+        if not issues:
+            logger.info(f"No issues found for rule: {rule_name}")
             return
 
         # If we're in dry run mode, just log the changes
         if self.dry_run:
             logger.info(f"Dry run - Rule '{rule_name}' would produce these changes:")
-            logger.info(f"Original:\n{text}")
-            logger.info(f"Modified:\n{corrected_text}")
+            for violation in issues:
+                logger.info(f"Line {violation.line_number}: {violation.issue_message}")
             return
 
-        # Process the corrected text
-        original_lines = text.splitlines()
-        corrected_lines = corrected_text.splitlines()
-
-        # Detect differences and create replacements/insertions/deletions
-        self._process_diff(original_lines, corrected_lines, rule_name)
+        # Process each violation and create appropriate issue objects
+        for violation in issues:
+            if violation.resolution == "edit_line":
+                self.add_replacement(
+                    ReplaceLineFixableIssue(
+                        line=violation.line_number,
+                        existing_content=line_lookup[violation.line_number],
+                        issue_message=[
+                            f"Rule '{rule_name}': {violation.issue_message}"
+                        ],
+                    )
+                )
+            elif violation.resolution == "delete_line":
+                self.add_deletion(
+                    DeleteLineIssue(
+                        line=violation.line_number,
+                        existing_content=self.lines[violation.line_number - 1],
+                        issue_message=[
+                            f"Rule '{rule_name}': {violation.issue_message}"
+                        ],
+                    )
+                )
+            elif violation.resolution == "insert_line":
+                self.add_insertion(
+                    InsertLineIssue(
+                        line=violation.line_number,
+                        insert_content=violation.new_content,
+                        issue_message=[
+                            f"Rule '{rule_name}': {violation.issue_message}"
+                        ],
+                    )
+                )
 
         # Add to applied rules
         self.applied_rules.append(rule_name)
-        logger.success(f"Applied rule: {rule_name}")
-
-    def _process_diff(
-        self, original_lines: List[str], corrected_lines: List[str], rule_name: str
-    ) -> None:
-        """
-        Process differences between original and corrected lines.
-
-        Args:
-            original_lines: List of original lines.
-            corrected_lines: List of corrected lines.
-            rule_name: Name of the rule being applied.
-        """
-        # If line counts are different, handle as complete replacement
-        if len(original_lines) != len(corrected_lines):
-            logger.info(
-                f"Line count changed from {len(original_lines)} to {len(corrected_lines)}"
-            )
-
-            # Delete all original lines
-            for i, line in enumerate(original_lines, 1):
-                self.add_deletion(
-                    DeleteLineIssue(
-                        line=i,
-                        existing_content=line,
-                        issue_message=[f"Rule '{rule_name}' replacement"],
-                    )
-                )
-
-            # Insert all new lines
-            for i, line in enumerate(corrected_lines, 1):
-                self.add_insertion(InsertLineIssue(line=i, insert_content=line))
-            return
-
-        # Line counts are the same, look for individual line changes
-        changes = 0
-        for i, (original, corrected) in enumerate(
-            zip(original_lines, corrected_lines), 1
-        ):
-            if original != corrected:
-                # Delete original line
-                self.add_deletion(
-                    DeleteLineIssue(
-                        line=i,
-                        existing_content=original,
-                        issue_message=[f"Rule '{rule_name}' edit"],
-                    )
-                )
-
-                # Insert corrected line
-                self.add_insertion(InsertLineIssue(line=i, insert_content=corrected))
-                changes += 1
-
-        logger.info(f"Applied {changes} line changes for rule '{rule_name}'")
+        logger.success(f"Applied rule: {rule_name} with {len(issues)} changes")
 
     def collect_issues(self) -> None:
         """

@@ -13,6 +13,7 @@ dependencies = [
     "spacy>=3.8.5",
     "typer>=0.15.2",
     "pyyaml>=6.0.1",
+    "dspy>=2.6.23",
 ]
 
 [project.optional-dependencies]
@@ -35,3 +36,8 @@ python_functions = "test_*"
 [tool.pyright]
 venvPath = "."
 venv='.venv'
+
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.4.2",
+]

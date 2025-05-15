@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -30,7 +31,6 @@ class LineIssue:
 class ReplaceLineFixableIssue(LineIssue):
     existing_content: str
 
-    @cache.memoize()
     def fix(self) -> str:
         """
         Fix the line issue using Anthropic's API.
@@ -52,22 +52,28 @@ class ReplaceLineFixableIssue(LineIssue):
 To fix the following issue:
 
 <issue>
-{self.issue_message}
+{issues_str}
 </issue>
 
-Only return the rewritten line. Do not include the line number or any other text.
+Rewrite the entire line resolving the issue description. It is imperative to rewrite the entire line, even if the issue appears in a single word or part of the line. We are going to replace the entire above line so you must maintain the original line except for the fixes to the issues.
 """
 
             # Call Anthropic API
+            print(prompt)
             message = patched_client.chat.completions.create(
                 model="anthropic/claude-3-haiku-20240307",
-                max_tokens=5000,
+                max_tokens=4096,
                 temperature=0.25,
                 messages=[{"role": "user", "content": prompt}],
                 response_model=FixedLine,
             )
 
-            return message.replacement_content
+            # Match indentation of original content
+            leading_spaces = len(self.existing_content) - len(
+                self.existing_content.lstrip()
+            )
+            return " " * leading_spaces + message.replacement_content.lstrip()
+
         except Exception as e:
             logger.error(f"Error fixing line issue: {e}")
             return self.existing_content
@@ -120,19 +126,17 @@ class BaseEditor(ABC, BaseModel):
         pass
 
     def get_line_number_lookup(self) -> Dict[int, str]:
-        return {
-            line_number: line_content
+        return OrderedDict(
+            (line_number, line_content)
             for line_number, line_content in enumerate(self.get_text().split("\n"), 1)
-        }
+        )
 
     def get_text_with_line_numbers(self) -> str:
         return "\n".join(
-            sorted(
-                [
-                    f"{line_number}: {line_content}"
-                    for line_number, line_content in self.get_line_number_lookup().items()
-                ]
-            )
+            [
+                f"{line_number}: {line_content}"
+                for line_number, line_content in self.get_line_number_lookup().items()
+            ]
         )
 
     def generate_v2(self) -> str:
@@ -143,12 +147,20 @@ class BaseEditor(ABC, BaseModel):
 
         initial_line_lookup = self.get_line_number_lookup()
         changes: Dict[int, str] = {}  # Store results of fixes/deletions
-
-        # Process replacements
+        # Compress issues by line number
+        compressed_issues: Dict[int, List[ReplaceLineFixableIssue]] = {}
         for issue in self.replacements:
-            new_content = issue.fix()
-            changes[issue.line] = new_content
-            logger.success(f"Replacing line {issue.line} with content: {new_content}")
+            if issue.line not in compressed_issues:
+                compressed_issues[issue.line] = []
+            compressed_issues[issue.line].append(issue)
+
+        # Process all issues for each line
+        for line_no, line_issues in compressed_issues.items():
+            combined_content = initial_line_lookup[line_no]
+            for issue in line_issues:
+                combined_content = issue.fix()
+            changes[line_no] = combined_content
+            logger.success(f"Replacing line {line_no} with content: {combined_content}")
 
         # Process deletions
         for issue in self.deletions:
