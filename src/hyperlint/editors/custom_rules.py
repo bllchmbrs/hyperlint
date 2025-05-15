@@ -64,6 +64,8 @@ class RulesEditor(BaseEditor):
     exclude_rules: List[str] = Field(default_factory=list)
     applied_rules: List[str] = Field(default_factory=list)
     dry_run: bool = False
+    require_approval: bool = True
+    log_approvals: bool = True
 
     def prerun_checks(self) -> bool:
         """

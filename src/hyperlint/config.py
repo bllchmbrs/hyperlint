@@ -29,6 +29,8 @@ class SimpleConfig(BaseModel):
     # Global settings
 
     dry_run: bool = False
+    require_approval: bool = True
+    log_approvals: bool = True
     enabled_editors: List[Literal["vale", "custom_rules"]] = Field(
         default_factory=lambda: ["vale", "custom_rules"]
     )

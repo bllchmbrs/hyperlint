@@ -137,6 +137,8 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
 
 class ValeEditor(BaseEditor):
     vale_config_path: FilePath
+    require_approval: bool = True
+    log_approvals: bool = True
 
     def prerun_checks(self) -> bool:
         vale_installed = check_vale_installation()

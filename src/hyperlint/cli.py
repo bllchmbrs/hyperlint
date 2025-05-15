@@ -33,6 +33,8 @@ def vale(
     path: str,
     vale_config_path: str | None = None,
     dry_run: bool = False,
+    require_approval: bool = False,
+    log_approvals: bool = True,
 ):
     """
     Run Vale on a file to identify style issues.
@@ -46,6 +48,12 @@ def vale(
 
         # Preview changes without applying them
         hyperlint vale README.md --dry-run
+
+        # Apply changes without approval prompts
+        hyperlint vale README.md --no-require-approval
+
+        # Don't log approval decisions
+        hyperlint vale README.md --no-log-approvals
     """
     path_obj = Path(path)
 
@@ -55,7 +63,12 @@ def vale(
     else:
         vale_config_path_final = DEFAULT_INI_PATH
 
-    editor = ValeEditor(path=path_obj, vale_config_path=vale_config_path_final)
+    editor = ValeEditor(
+        path=path_obj,
+        vale_config_path=vale_config_path_final,
+        require_approval=require_approval,
+        log_approvals=log_approvals,
+    )
     if dry_run:
         editor.dry_run()
     else:
@@ -69,6 +82,8 @@ def apply_rules(
     include_rules: List[str] = [],
     exclude_rules: List[str] = [],
     dry_run: bool = False,
+    no_require_approval: bool = False,
+    no_log_approvals: bool = True,
 ):
     """
     Apply AI-powered rules to a document.
@@ -88,6 +103,12 @@ def apply_rules(
 
         # Preview rule application without making changes
         hyperlint rules apply docs/guide.md rules/ --dry-run
+
+        # Apply changes with approval prompts
+        hyperlint rules apply README.md rules/ --require-approval
+
+        # Don't log approval decisions
+        hyperlint rules apply README.md rules/ --no-log-approvals
     """
     path_obj = Path(path)
     rules_dir_obj = Path(rules_directory)
@@ -114,6 +135,8 @@ def apply_rules(
         include_rules=include_list,
         exclude_rules=exclude_list,
         dry_run=dry_run,
+        require_approval=not no_require_approval,
+        log_approvals=not no_log_approvals,
     )
 
     if dry_run:

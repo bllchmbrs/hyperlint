@@ -9,6 +9,7 @@ dependencies = [
     "instructor>=1.7.9",
     "litellm>=1.67.2",
     "loguru>=0.7.3",
+    "rich>=13.7.0",
     "smolcrawl>=0.1.7",
     "spacy>=3.8.5",
     "typer>=0.15.2",
