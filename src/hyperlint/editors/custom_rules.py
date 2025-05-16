@@ -7,6 +7,7 @@ import dspy
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from ..config import DEFAULT_RULE_VIOLATION_MODEL
 from .core import BaseEditor, DeleteLineIssue, InsertLineIssue, ReplaceLineFixableIssue
 
 # Setup cache and instructor
@@ -14,7 +15,7 @@ cache = diskcache.Cache("./data/cache/rules_editor")
 
 
 openapi_key = os.environ["OPENAI_API_KEY"]
-lm = dspy.LM("openai/gpt-4o-mini", api_key=openapi_key)
+lm = dspy.LM(DEFAULT_RULE_VIOLATION_MODEL, api_key=openapi_key)
 
 
 class RulesViolation(BaseModel):

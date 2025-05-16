@@ -9,6 +9,7 @@ DEFAULT_CONFIG_PATH = Path.cwd() / ".hyperlint.yaml"
 DEFAULT_INI_PATH = Path.cwd() / ".vale.ini"
 DEFAULT_CUSTOM_RULES_PATH = Path.cwd() / "rules"
 DEFAULT_EDIT_MODEL = "anthropic/claude-3-haiku-20240307"
+DEFAULT_RULE_VIOLATION_MODEL = "openai/gpt-4o-mini"
 
 
 class ValeConfig(BaseModel):
