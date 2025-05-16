@@ -66,7 +66,7 @@ def vale(
     if dry_run:
         config.dry_run = True
 
-    editor = ValeEditor(path=path_obj, config=config, approval_log=EditorApprovalLog)
+    editor = ValeEditor(path=path_obj, config=config)
     if config.dry_run:
         editor.dry_run()
     else:
@@ -144,7 +144,7 @@ def apply_rules(
     if exclude_list:
         config.custom_rules.exclude_rules = exclude_rules
 
-    editor = RulesEditor(path=path_obj, config=config, approval_log=EditorApprovalLog)
+    editor = RulesEditor(path=path_obj, config=config)
 
     if config.dry_run:
         editor.dry_run()

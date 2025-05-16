@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from typing import List
 
-import dspy
+import dspy  # type: ignore
 from loguru import logger
 from openai import OpenAI
 from rich.console import Console

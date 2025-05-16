@@ -4,9 +4,11 @@ from pathlib import Path
 from random import shuffle
 from typing import List
 
-import dspy
-from config import DEFAULT_APPROVER_MODEL, SimpleConfig
+import dspy  # type:ignore
 from loguru import logger
+
+from .approval import EditorApprovalLog
+from .config import DEFAULT_APPROVER_MODEL
 
 # UNDER DEVELOPMENT, THIS DOESN'T WORK YET
 openapi_key = os.environ["OPENAI_API_KEY"]
@@ -74,8 +76,8 @@ def train_module_small(data: List[dspy.Example]):
     return optimizer.compile(module, trainset=data)
 
 
-def train_module(config: SimpleConfig):
-    labelled_data = load_change_data(config.get_approval_path())
+def train_module(log: EditorApprovalLog):
+    labelled_data = load_change_data(log.get_log_file_path())
     logger.info(f"Found {len(labelled_data)} examples")
     if len(labelled_data) < 15:
         logger.error("Not enough examples to train a model")

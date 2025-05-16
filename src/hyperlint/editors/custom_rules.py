@@ -1,8 +1,8 @@
 import os
 from typing import Dict, List, Literal
 
-import diskcache
-import dspy
+import diskcache  # type: ignore
+import dspy  # type: ignore
 from loguru import logger
 from pydantic import BaseModel, Field
 

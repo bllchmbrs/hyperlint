@@ -41,7 +41,7 @@ class SimpleConfig(BaseModel):
 
     hyperlint_dir: DirectoryPath = Field(default=Path(DEFAULT_HYPERLINT_STORAGE_DIR))
     enabled_editors: List[Literal["vale", "custom_rules"]] = Field(
-        default_factory=lambda: ["vale", "custom_rules"]
+        default_factory=lambda: ["vale", "custom_rules"]  # type: ignore
     )
 
     @classmethod

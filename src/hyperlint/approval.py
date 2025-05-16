@@ -150,7 +150,7 @@ class EditorApprovalLog(ApprovalLog):
         elif approval_request.issue_type == "insert":
             # Create syntax object for the insertion
             insertion_syntax = Syntax(
-                approval_request.replacement_content, "markdown", theme="monokai"
+                approval_request.replacement_content or "", "markdown", theme="monokai"
             )
 
             console.print(
