@@ -1,17 +1,12 @@
 import os
 from typing import Dict, List, Literal
 
-import diskcache  # type: ignore
 import dspy  # type: ignore
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from ..config import DEFAULT_RULE_VIOLATION_MODEL
 from .core import BaseEditor, DeleteLineIssue, ReplaceLineFixableIssue
-
-# Setup cache and instructor
-cache = diskcache.Cache("./data/cache/rules_editor")
-
 
 openapi_key = os.environ["OPENAI_API_KEY"]
 lm = dspy.LM(DEFAULT_RULE_VIOLATION_MODEL, api_key=openapi_key)
