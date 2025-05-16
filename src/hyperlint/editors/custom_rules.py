@@ -30,7 +30,6 @@ class RulesViolations(dspy.Signature):
     If a line can simply be edited to be correct, use the resolution:'edit_line'
     if a line can be deleted entirely use the resolution: 'delete_line'
     If a line or issue has a more nuanced problem that isn't straightforward to fix without guidance, use the resolution:'flag_line'
-
     """
 
     text_with_line_numbers: str = dspy.InputField()
