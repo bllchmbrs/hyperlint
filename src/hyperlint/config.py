@@ -77,6 +77,9 @@ class SimpleConfig(BaseModel):
 
         return merged
 
+    def get_storage_data_dir(self) -> Path:
+        return self.hyperlint_dir / "storage_data"
+
     def get_judge_data_dir(self) -> Path:
         return self.hyperlint_dir / "judge_data"
 

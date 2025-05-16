@@ -178,23 +178,3 @@ class EditorApprovalLog(ApprovalLog):
         """Get the path to the editor approval log file"""
         self.config.ensure_storage_dir()
         return self.config.get_judge_data_dir() / "editor_judge.jsonl"
-
-
-class ImageApprovalLog(EditorApprovalLog):
-    """
-    Implementation of EditorApprovalLog that supports image display.
-    This is a stub implementation that will be expanded later.
-    """
-
-    def get_log_file_path(self) -> Path:
-        """Get the path to the image approval log file"""
-        self.config.ensure_storage_dir()
-        return self.config.hyperlint_dir / "image_judge.jsonl"
-
-
-def get_approval_log(log_type: str, config: SimpleConfig) -> ApprovalLog:
-    if log_type == "editor":
-        return EditorApprovalLog(config)
-    if log_type == "image_build":
-        return ImageApprovalLog(config)
-    raise NotImplementedError("Not implemented")
