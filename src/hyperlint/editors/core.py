@@ -120,7 +120,7 @@ class InsertLineIssue(BaseModel):
 
 class DeleteLineIssue(LineIssue):
     existing_content: str
-    
+
     def fix(self) -> str:
         return DELETE_LINE_MESSAGE
 
@@ -147,7 +147,7 @@ def log_approval_decision(
     # Use default config if none provided
     if config is None:
         config = SimpleConfig()
-        
+
     # Create log entry
     log_entry = {
         "timestamp": datetime.now().isoformat(),
@@ -169,10 +169,9 @@ def log_approval_decision(
 
     # Ensure hyperlint directory exists
     config.ensure_storage_dir()
-    approvals_dir = config.get_judge_data_dir()
 
     # Create log file path
-    log_file = approvals_dir / "changes.jsonl"
+    log_file = config.get_approval_path()
 
     # Append to log file
     with open(log_file, "a") as f:
@@ -474,12 +473,12 @@ class BaseEditor(ABC, BaseModel):
         # Ensure dry run mode is active
         old_dry_run = self.config.dry_run
         self.config.dry_run = True
-        
+
         path = self.path
         original_text = self.get_text()
         final_content = self.generate_v2()
         print(diff(original_text, final_content))
-        
+
         # Restore original dry run setting
         self.config.dry_run = old_dry_run
         return path

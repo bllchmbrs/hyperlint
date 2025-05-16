@@ -11,6 +11,7 @@ DEFAULT_CUSTOM_RULES_PATH = Path.cwd() / "rules"
 DEFAULT_HYPERLINT_STORAGE_DIR = Path.cwd() / ".hyperlint"
 
 DEFAULT_EDIT_MODEL = "anthropic/claude-3-haiku-20240307"
+DEFAULT_APPROVER_MODEL = "openai/gpt-4.1-nano"
 DEFAULT_RULE_VIOLATION_MODEL = "openai/gpt-4o-mini"
 
 DELETE_LINE_MESSAGE = ">>>>>>>>>>>>>>DELETE<<<<<<<<<<<<<<<"
@@ -78,6 +79,12 @@ class SimpleConfig(BaseModel):
 
     def get_judge_data_dir(self) -> Path:
         return self.hyperlint_dir / "edit_judge_data"
+
+    def get_approval_path(self) -> Path:
+        return self.get_judge_data_dir() / "approvals.jsonl"
+
+    def get_judge_path(self):
+        return self.hyperlint_dir / "judge_model.json"
 
     def ensure_storage_dir(self):
         """
