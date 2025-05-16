@@ -175,7 +175,6 @@ class RulesEditor(BaseEditor):
                 self.add_deletion(
                     DeleteLineIssue(
                         line=violation.line_number,
-                        existing_content=line_lookup[violation.line_number],
                         issue_message=[
                             f"Rule '{rule_name}': {violation.issue_message}"
                         ],
