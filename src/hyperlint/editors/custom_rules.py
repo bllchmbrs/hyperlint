@@ -8,7 +8,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from ..config import DEFAULT_RULE_VIOLATION_MODEL
-from .core import BaseEditor, DeleteLineIssue, InsertLineIssue, ReplaceLineFixableIssue
+from .core import BaseEditor, DeleteLineIssue, ReplaceLineFixableIssue
 
 # Setup cache and instructor
 cache = diskcache.Cache("./data/cache/rules_editor")
@@ -178,13 +178,6 @@ class RulesEditor(BaseEditor):
                         issue_message=[
                             f"Rule '{rule_name}': {violation.issue_message}"
                         ],
-                    )
-                )
-            elif violation.resolution == "insert_line":
-                self.add_insertion(
-                    InsertLineIssue(
-                        line=violation.line_number,
-                        insert_content=violation.new_content,
                     )
                 )
 

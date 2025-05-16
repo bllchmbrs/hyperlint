@@ -10,13 +10,23 @@ import instructor
 from litellm import completion
 from loguru import logger
 from pydantic import BaseModel, Field, FilePath
+from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
+from rich.text import Text
 
 from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE
 
 patched_client = instructor.from_litellm(completion=completion)
+
+
+def diff(old: str, new: str):
+    diff = difflib.unified_diff(
+        old.splitlines(),
+        new.splitlines(),
+    )
+    return "\n".join(diff)
 
 
 def ensure_hyperlint_dir() -> Path:
@@ -451,10 +461,27 @@ class BaseEditor(ABC, BaseModel):
 
     def update_file(self):
         path = self.path
+        original_text = self.get_text()
         final_content = self.generate_v2()
 
-        with open(path, "w") as f:
-            f.write(final_content)
+        console = Console()
+        old_lines = original_text.splitlines()
+        new_lines = final_content.splitlines()
+
+        # Display the diff manually
+        for i, (old_line, new_line) in enumerate(zip(old_lines, new_lines)):
+            if old_line != new_line:
+                console.print(f"Line {i + 1}:", style="bold")
+                old_text = Text(f"- {old_line}", style="red")
+                new_text = Text(f"+ {new_line}", style="green")
+                console.print(Columns([old_text, new_text]))
+        approved = console.input(
+            "\n[bold]Apply this change? [y/n]:[/bold] "
+        ).lower().strip() in ("y", "yes")
+
+        if approved:
+            with open(path, "w") as f:
+                f.write(final_content)
 
         return path
 
@@ -462,11 +489,5 @@ class BaseEditor(ABC, BaseModel):
         path = self.path
         original_text = self.get_text()
         final_content = self.generate_v2()
-
-        diff = difflib.unified_diff(
-            original_text.splitlines(),
-            final_content.splitlines(),
-        )
-        print("\n".join(diff))
-
+        print(diff(original_text, final_content))
         return path
