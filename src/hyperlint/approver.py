@@ -5,9 +5,8 @@ from random import shuffle
 from typing import List
 
 import dspy
+from config import DEFAULT_APPROVER_MODEL, SimpleConfig
 from loguru import logger
-
-from ..config import DEFAULT_APPROVER_MODEL, SimpleConfig
 
 # UNDER DEVELOPMENT, THIS DOESN'T WORK YET
 openapi_key = os.environ["OPENAI_API_KEY"]

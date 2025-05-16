@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import typer
 
+from .approval import EditorApprovalLog
 from .config import DEFAULT_CONFIG_PATH, create_default_config, load_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
@@ -64,12 +65,8 @@ def vale(
     # Override config values with CLI parameters
     if dry_run:
         config.dry_run = True
-    if require_approval is not None:
-        config.approval_mode = require_approval
-    if log_approvals is not None:
-        config.log_approvals = log_approvals
 
-    editor = ValeEditor(path=path_obj, config=config)
+    editor = ValeEditor(path=path_obj, config=config, approval_log=EditorApprovalLog)
     if config.dry_run:
         editor.dry_run()
     else:
@@ -120,8 +117,6 @@ def apply_rules(
         config.dry_run = True
     if require_approval is not None:
         config.approval_mode = require_approval
-    if log_approvals is not None:
-        config.log_approvals = log_approvals
     if rules_directory is not None:
         config.custom_rules.rules_directory = Path(rules_directory)
 
@@ -149,7 +144,7 @@ def apply_rules(
     if exclude_list:
         config.custom_rules.exclude_rules = exclude_rules
 
-    editor = RulesEditor(path=path_obj, config=config)
+    editor = RulesEditor(path=path_obj, config=config, approval_log=EditorApprovalLog)
 
     if config.dry_run:
         editor.dry_run()

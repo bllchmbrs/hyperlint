@@ -1,9 +1,7 @@
 import difflib
-import json
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List
 
 import instructor
 from litellm import completion
@@ -11,10 +9,9 @@ from loguru import logger
 from pydantic import BaseModel, Field, FilePath
 from rich.columns import Columns
 from rich.console import Console
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 
+from ..approval import EditorApprovalRequest, get_approval_log
 from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE, SimpleConfig
 
 patched_client = instructor.from_litellm(completion=completion)
@@ -125,135 +122,8 @@ class DeleteLineIssue(LineIssue):
         return DELETE_LINE_MESSAGE
 
 
-def log_approval_decision(
-    issue_type: str,
-    issue: Union[ReplaceLineFixableIssue, InsertLineIssue, DeleteLineIssue],
-    approved: bool,
-    fix: Optional[str] = None,
-    file_path: Optional[str] = None,
-    config: Optional[SimpleConfig] = None,
-) -> None:
-    """
-    Log the approval decision to a JSONL file.
-
-    Args:
-        issue_type: Type of issue (replacement, insertion, deletion)
-        issue: The issue object
-        approved: Whether the fix was approved
-        fix: The proposed fix (for replacements)
-        file_path: The path to the file being edited
-        config: Configuration object (uses default if None)
-    """
-    # Use default config if none provided
-    if config is None:
-        config = SimpleConfig()
-
-    # Create log entry
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "file": str(file_path),
-        "issue_type": issue_type,
-        "line": issue.line,
-        "approved": approved,
-    }
-
-    # Add issue-specific details
-    if isinstance(issue, ReplaceLineFixableIssue):
-        log_entry["issue_message"] = issue.issue_message
-        log_entry["content_before"] = issue.existing_content
-        log_entry["content_after"] = fix
-    elif isinstance(issue, InsertLineIssue):
-        log_entry["content_after"] = issue.insert_content
-    elif isinstance(issue, DeleteLineIssue):
-        log_entry["issue_message"] = issue.issue_message
-
-    # Ensure hyperlint directory exists
-    config.ensure_storage_dir()
-
-    # Create log file path
-    log_file = config.get_approval_path()
-
-    # Append to log file
-    with open(log_file, "a") as f:
-        f.write(json.dumps(log_entry) + "\n")
-
-    logger.debug(f"Logged {issue_type} approval decision to {log_file}")
-
-
-def prompt_for_approval(
-    issue: Union[ReplaceLineFixableIssue, InsertLineIssue, DeleteLineIssue],
-    proposed_fix: Optional[str] = None,
-    file_path: Optional[str] = None,
-) -> bool:
-    """
-    Prompt the user to approve a proposed fix.
-
-    Args:
-        issue: The issue object to be fixed
-        proposed_fix: The proposed fix (for replacements)
-        file_path: The path to the file being edited
-
-    Returns:
-        bool: True if approved, False otherwise
-    """
-    console = Console()
-
-    file_info = f"File: {file_path}" if file_path else ""
-    line_info = f"Line: {issue.line}"
-
-    if isinstance(issue, ReplaceLineFixableIssue):
-        issue_msg = (
-            "\n".join(issue.issue_message)
-            if isinstance(issue.issue_message, list)
-            else issue.issue_message
-        )
-        # Create syntax objects
-
-        console.print(
-            Panel.fit(
-                f"{file_info}\n{line_info}\n\n[bold]Issue:[/bold]\n{issue_msg}\n\n"
-                f"[bold]Original:[/bold]",
-                title="[bold green]Replacement Needed[/bold green]",
-                border_style="green",
-            )
-        )
-        # Display the original and proposed fix side by side
-        original_text = Text(f"- {issue.existing_content}", style="red")
-        proposed_text = Text(f"+ {proposed_fix}", style="green")
-        console.print("Line {0}:".format(issue.line), style="bold")
-        console.print(Columns([original_text, proposed_text]))
-    elif isinstance(issue, InsertLineIssue):
-        # Create syntax object for the insertion
-        insertion_syntax = Syntax(issue.insert_content, "markdown", theme="monokai")
-
-        console.print(
-            Panel.fit(
-                f"{file_info}\n{line_info}\n\n[bold]Proposed insertion:[/bold]",
-                title="[bold blue]Insertion Needed[/bold blue]",
-                border_style="blue",
-            )
-        )
-        console.print(insertion_syntax)
-
-    elif isinstance(issue, DeleteLineIssue):
-        issue_msg = (
-            "\n".join(issue.issue_message)
-            if isinstance(issue.issue_message, list)
-            else issue.issue_message
-        )
-
-        console.print(
-            Panel.fit(
-                f"{file_info}\n{line_info}\n\n[bold]Issue:[/bold]\n{issue_msg}\n\n"
-                f"[bold]Content to delete:[/bold]\n{Syntax(issue.existing_content, 'markdown', theme='monokai')}",
-                title="[bold red]Deletion Needed[/bold red]",
-                border_style="red",
-            )
-        )
-
-    return console.input(
-        "\n[bold]Apply this change? [y/n]:[/bold] "
-    ).lower().strip() in ("y", "yes")
+# The functions log_approval_decision and prompt_for_approval have been moved
+# to the ApprovalLog classes in approval.py
 
 
 class BaseEditor(ABC, BaseModel):
@@ -265,12 +135,16 @@ class BaseEditor(ABC, BaseModel):
     )
     insertions: List[InsertLineIssue] = Field(default_factory=list, repr=False)
     deletions: List[DeleteLineIssue] = Field(default_factory=list, repr=False)
+    editor_type: str = "editor"
 
     def get_text(self) -> str:
         if self.text is None:
             with open(self.path, "r") as f:
                 self.text = f.read()
         return self.text
+
+    def get_approval_log(self):
+        return get_approval_log(self.editor_type, self.config)
 
     @abstractmethod
     def prerun_checks(self) -> bool:
@@ -320,20 +194,37 @@ class BaseEditor(ABC, BaseModel):
             logger.debug("does not require approval")
             return True
 
-        approved = prompt_for_approval(
-            issue=issue, proposed_fix=proposed_fix, file_path=str(self.path)
-        )
-
-        # Log decision if enabled
-        if self.config.log_approvals:
-            log_approval_decision(
-                issue_type=get_issue_type(issue),
-                issue=issue,
-                approved=approved,
-                fix=proposed_fix,
-                file_path=str(self.path),
-                config=self.config,
+        if isinstance(issue, ReplaceLineFixableIssue):
+            request = EditorApprovalRequest(
+                file_path=self.path,
+                issue_type="replace",
+                line=issue.line,
+                issue_messages="\n".join(issue.issue_message),
+                existing_content=issue.existing_content,
+                replacement_content=proposed_fix,
             )
+            approved = self.get_approval_log().prompt_for_approval(request)
+
+        elif isinstance(issue, DeleteLineIssue):
+            request = EditorApprovalRequest(
+                file_path=self.path,
+                issue_type="delete",
+                line=issue.line,
+                issue_messages="\n".join(issue.issue_message),
+                existing_content=issue.existing_content,
+                replacement_content=proposed_fix,
+            )
+            approved = self.get_approval_log().prompt_for_approval(request)
+        elif isinstance(issue, InsertLineIssue):
+            request = EditorApprovalRequest(
+                file_path=self.path,
+                issue_type="insert",
+                line=issue.line,
+                issue_messages="",
+                existing_content="",
+                replacement_content=proposed_fix,
+            )
+            approved = self.get_approval_log().prompt_for_approval(request)
 
         return approved
 

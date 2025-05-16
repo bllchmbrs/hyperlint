@@ -3,10 +3,11 @@ import os
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from loguru import logger
 
+from ..approval import EditorApprovalLog
 from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
 
 
@@ -135,6 +136,9 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
 
 
 class ValeEditor(BaseEditor):
+    def model_post_init(self, context: Any, /) -> None:
+        self.approval_log = EditorApprovalLog(self.config)
+
     def prerun_checks(self) -> bool:
         vale_installed = check_vale_installation()
         config_path = self.config.vale.config_path
