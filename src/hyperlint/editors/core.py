@@ -67,7 +67,7 @@ class LineIssue(BaseModel):
 class ReplaceLineFixableIssue(LineIssue):
     existing_content: str
 
-    def fix(self) -> str:
+    def fix(self, context: str | None = None) -> str:
         """
         Fix the line issue using Anthropic's API.
 
@@ -77,9 +77,20 @@ class ReplaceLineFixableIssue(LineIssue):
 
         try:
             issues_str = "\n".join(self.issue_message)
-            logger.info(f"Fixing line issue: {issues_str}")
+            logger.debug(f"Fixing line issue: {issues_str}")
+            context_str = ""
+            if context:
+                context_str = (
+                    "Here is some context around the line in question\n<context>\n"
+                    + context
+                    + "\n</context>\n"
+                )
+
             # Prepare prompt for Anthropic
-            prompt = f"""Rewrite the following line:
+            prompt = f"""Act as if you are a professional editor with 3 years of experience.
+
+{context_str}
+Rewrite the following line:
 
 <line number={self.line}>
 {self.existing_content}
@@ -94,8 +105,6 @@ To fix the following issue:
 Rewrite the entire line resolving the issue description. It is imperative to rewrite the entire line, even if the issue appears in a single word or part of the line. We are going to replace the entire above line so you must maintain the original line except for the fixes to the issues.
 """
 
-            # Call Anthropic API
-            print(prompt)
             message = patched_client.chat.completions.create(
                 model="anthropic/claude-3-haiku-20240307",
                 max_tokens=4096,
@@ -120,7 +129,7 @@ class InsertLineIssue(BaseModel):
     insert_content: str
 
 
-class DeleteLineIssue(ReplaceLineFixableIssue):
+class DeleteLineIssue(LineIssue):
     def fix(self) -> str:
         return DELETE_LINE_MESSAGE
 
@@ -202,26 +211,38 @@ def prompt_for_approval(
             if isinstance(issue.issue_message, list)
             else issue.issue_message
         )
+        # Create syntax objects
+        original_syntax = Syntax(issue.existing_content, "markdown", theme="monokai")
+        proposed_fix_syntax = Syntax(proposed_fix, "markdown", theme="monokai")
 
         console.print(
             Panel.fit(
                 f"{file_info}\n{line_info}\n\n[bold]Issue:[/bold]\n{issue_msg}\n\n"
-                f"[bold]Original:[/bold]\n{Syntax(issue.existing_content, 'markdown', theme='monokai')}\n\n"
-                f"[bold]Proposed fix:[/bold]\n{Syntax(proposed_fix, 'markdown', theme='monokai')}",
+                f"[bold]Original:[/bold]",
                 title="[bold green]Replacement Needed[/bold green]",
                 border_style="green",
             )
         )
-
-    elif isinstance(issue, InsertLineIssue):
+        console.print(original_syntax)
         console.print(
             Panel.fit(
-                f"{file_info}\n{line_info}\n\n"
-                f"[bold]Proposed insertion:[/bold]\n{Syntax(issue.insert_content, 'markdown', theme='monokai')}",
+                "[bold]Proposed fix:[/bold]",
+                border_style="green",
+            )
+        )
+        console.print(proposed_fix_syntax)
+    elif isinstance(issue, InsertLineIssue):
+        # Create syntax object for the insertion
+        insertion_syntax = Syntax(issue.insert_content, "markdown", theme="monokai")
+
+        console.print(
+            Panel.fit(
+                f"{file_info}\n{line_info}\n\n[bold]Proposed insertion:[/bold]",
                 title="[bold blue]Insertion Needed[/bold blue]",
                 border_style="blue",
             )
         )
+        console.print(insertion_syntax)
 
     elif isinstance(issue, DeleteLineIssue):
         issue_msg = (
@@ -267,12 +288,15 @@ class BaseEditor(ABC, BaseModel):
 
     # Add methods for subclasses to add issues
     def add_replacement(self, issue: ReplaceLineFixableIssue):
+        logger.debug(f"Adding replacement issue: {issue}")
         self.replacements.append(issue)
 
     def add_insertion(self, issue: InsertLineIssue):
+        logger.debug(f"Adding insertion issue: {issue}")
         self.insertions.append(issue)
 
     def add_deletion(self, issue: DeleteLineIssue):
+        logger.debug(f"Adding deletion issue: {issue}")
         self.deletions.append(issue)
 
     @abstractmethod
@@ -294,14 +318,35 @@ class BaseEditor(ABC, BaseModel):
             ]
         )
 
-    def generate_v2(self) -> str:
-        # Ensure text is loaded
-        self.get_text()
-        # Let subclass populate the issues
-        self.collect_issues()
+    def _approval_filter(
+        self,
+        issue: ReplaceLineFixableIssue,
+        proposed_fix: str,
+    ) -> bool:
+        if self.dry_run:
+            logger.debug("Is dry run, approving")
+            return True
+        if not self.require_approval:
+            logger.debug("does not require approval")
+            return True
 
-        initial_line_lookup = self.get_line_number_lookup()
-        changes: Dict[int, str] = {}  # Store results of fixes/deletions
+        approved = prompt_for_approval(
+            issue=issue, proposed_fix=proposed_fix, file_path=str(self.path)
+        )
+
+        # Log decision if enabled
+        if self.log_approvals:
+            log_approval_decision(
+                issue_type=get_issue_type(issue),
+                issue=issue,
+                approved=approved,
+                fix=proposed_fix,
+                file_path=str(self.path),
+            )
+
+        return approved
+
+    def _compress_issues(self):
         # Compress issues by line number
         compressed_issues: Dict[int, List[ReplaceLineFixableIssue]] = {}
         for issue in self.replacements:
@@ -309,64 +354,59 @@ class BaseEditor(ABC, BaseModel):
                 compressed_issues[issue.line] = []
             compressed_issues[issue.line].append(issue)
 
+        logger.debug(
+            f"Compressed {len(self.replacements)} into {len(compressed_issues)}"
+        )
+        return compressed_issues
+
+    def _get_surrounding_lines(
+        self, line_number: int, line_count: int, line_lookup: Dict[int, str]
+    ) -> List[str]:
+        # Get surrounding lines for a given line number
+        surrounding_lines: List[str] = []
+        # Determine the range of lines to include
+        start_line = max(1, line_number - line_count)
+        end_line = line_number + line_count + 1
+
+        # Collect all lines in range
+        for line_no in range(start_line, end_line):
+            if line_no in line_lookup:
+                surrounding_lines.append(f"{line_no}: {line_lookup[line_no]}")
+
+        return surrounding_lines
+
+    def generate_v2(self) -> str:
+        self.get_text()
+        self.collect_issues()
+        compressed_issues = self._compress_issues()
+        initial_line_lookup = self.get_line_number_lookup()
+        changes: Dict[int, str] = {}  # Store results of fixes/deletions
+
         # Process all issues for each line
         for line_no, line_issues in compressed_issues.items():
-            combined_content = initial_line_lookup[line_no]
-            for issue in line_issues:
-                proposed_fix = issue.fix()
-
-                # Request approval if required
-                approved = True
-                if self.require_approval:
-                    approved = prompt_for_approval(
-                        issue=issue, proposed_fix=proposed_fix, file_path=str(self.path)
-                    )
-
-                # Log decision if enabled
-                if self.log_approvals:
-                    log_approval_decision(
-                        issue_type=get_issue_type(issue),
-                        issue=issue,
-                        approved=approved,
-                        fix=proposed_fix,
-                        file_path=str(self.path),
-                    )
-
-                # Apply the fix if approved
-                if approved:
-                    combined_content = proposed_fix
-                    logger.success(f"Approved replacement for line {line_no}")
-                else:
-                    logger.warning(f"Rejected replacement for line {line_no}")
-
-            if combined_content != initial_line_lookup[line_no]:
-                changes[line_no] = combined_content
-                logger.success(
-                    f"Replacing line {line_no} with content: {combined_content}"
-                )
+            issues = list(
+                set([msg for issue in line_issues for msg in issue.issue_message])
+            )
+            logger.debug(f"Fixing {len(issues)} issues on line {line_no}")
+            deduped_issue = line_issues[0]
+            deduped_issue.issue_message = issues
+            context = "\n".join(
+                self._get_surrounding_lines(line_no, 5, initial_line_lookup)
+            )
+            proposed_fix = deduped_issue.fix(context)
+            approved = self._approval_filter(deduped_issue, proposed_fix)
+            if approved and proposed_fix != initial_line_lookup[line_no]:
+                initial_line_lookup[line_no] = proposed_fix
 
         # Process deletions
         for issue in self.deletions:
-            # Request approval if required
-            approved = True
-            if self.require_approval:
-                approved = prompt_for_approval(issue=issue, file_path=str(self.path))
-
-            # Log decision if enabled
-            if self.log_approvals:
-                log_approval_decision(
-                    issue_type=get_issue_type(issue),
-                    issue=issue,
-                    approved=approved,
-                    file_path=str(self.path),
+            approved = self._approval_filter(issue, "TO DELETE")
+            if approved:
+                initial_line_lookup[issue.line] = (
+                    DELETE_LINE_MESSAGE  # Mark for deletion
                 )
 
-            # Apply the deletion if approved
-            if approved:
-                changes[issue.line] = DELETE_LINE_MESSAGE  # Mark for deletion
-                logger.warning(f"Deleting line {issue.line}: {issue.existing_content}")
-            else:
-                logger.warning(f"Rejected deletion for line {issue.line}")
+        logger.success(f"Making {len(changes)} changes")
 
         final_lines: List[str] = []
         sorted_insertions = sorted(self.insertions, key=lambda x: x.line)
@@ -380,31 +420,10 @@ class BaseEditor(ABC, BaseModel):
                 and sorted_insertions[insertion_idx].line == line_no
             ):
                 insert_issue = sorted_insertions[insertion_idx]
-
-                # Request approval if required
-                approved = True
-                if self.require_approval:
-                    approved = prompt_for_approval(
-                        issue=insert_issue, file_path=str(self.path)
-                    )
-
-                # Log decision if enabled
-                if self.log_approvals:
-                    log_approval_decision(
-                        issue_type=get_issue_type(insert_issue),
-                        issue=insert_issue,
-                        approved=approved,
-                        file_path=str(self.path),
-                    )
-
+                approved = self._approval_filter(insert_issue, "TO insert")
                 # Apply the insertion if approved
                 if approved:
                     final_lines.append(insert_issue.insert_content)
-                    logger.info(
-                        f"Inserting before line {line_no}: {insert_issue.insert_content}"
-                    )
-                else:
-                    logger.warning(f"Rejected insertion before line {line_no}")
 
                 insertion_idx += 1
 
@@ -422,32 +441,10 @@ class BaseEditor(ABC, BaseModel):
         while insertion_idx < len(sorted_insertions):
             insert_issue = sorted_insertions[insertion_idx]
 
-            # Request approval if required
-            approved = True
-            if self.require_approval:
-                approved = prompt_for_approval(
-                    issue=insert_issue, file_path=str(self.path)
-                )
-
-            # Log decision if enabled
-            if self.log_approvals:
-                log_approval_decision(
-                    issue_type=get_issue_type(insert_issue),
-                    issue=insert_issue,
-                    approved=approved,
-                    file_path=str(self.path),
-                )
-
+            approved = self._approval_filter(insert_issue, "TO insert")
             # Apply the insertion if approved
             if approved:
-                logger.info(
-                    f"Inserting after last line ({insert_issue.line}): {insert_issue.insert_content}"
-                )
                 final_lines.append(insert_issue.insert_content)
-            else:
-                logger.warning(
-                    f"Rejected insertion after last line ({insert_issue.line})"
-                )
 
             insertion_idx += 1
 
@@ -468,6 +465,10 @@ class BaseEditor(ABC, BaseModel):
         original_text = self.get_text()
         final_content = self.generate_v2()
 
-        difflib.unified_diff(original_text.splitlines(), final_content.splitlines())
-        print(final_content)
+        diff = difflib.unified_diff(
+            original_text.splitlines(),
+            final_content.splitlines(),
+        )
+        print("\n".join(diff))
+
         return path

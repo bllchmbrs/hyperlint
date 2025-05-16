@@ -63,7 +63,6 @@ class RulesEditor(BaseEditor):
     include_rules: List[str] = Field(default_factory=list)
     exclude_rules: List[str] = Field(default_factory=list)
     applied_rules: List[str] = Field(default_factory=list)
-    dry_run: bool = False
     require_approval: bool = True
     log_approvals: bool = True
 
@@ -160,13 +159,6 @@ class RulesEditor(BaseEditor):
             logger.info(f"No issues found for rule: {rule_name}")
             return
 
-        # If we're in dry run mode, just log the changes
-        if self.dry_run:
-            logger.info(f"Dry run - Rule '{rule_name}' would produce these changes:")
-            for violation in issues:
-                logger.info(f"Line {violation.line_number}: {violation.issue_message}")
-            return
-
         # Process each violation and create appropriate issue objects
         for violation in issues:
             if violation.resolution == "edit_line":
@@ -194,15 +186,14 @@ class RulesEditor(BaseEditor):
                     InsertLineIssue(
                         line=violation.line_number,
                         insert_content=violation.new_content,
-                        issue_message=[
-                            f"Rule '{rule_name}': {violation.issue_message}"
-                        ],
                     )
                 )
 
         # Add to applied rules
         self.applied_rules.append(rule_name)
-        logger.success(f"Applied rule: {rule_name} with {len(issues)} changes")
+        logger.success(
+            f"Applied rule: {rule_name} and found {len(issues)} proposed changes"
+        )
 
     def collect_issues(self) -> None:
         """
@@ -211,7 +202,7 @@ class RulesEditor(BaseEditor):
         """
         # Load all rules
         rules = self._load_rules()
-
+        logger.debug(f"Loaded {len(rules)} rules")
         # Filter rules based on include/exclude lists
         filtered_rules = self._filter_rules(rules)
 
