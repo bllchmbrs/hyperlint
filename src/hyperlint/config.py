@@ -8,6 +8,7 @@ from pydantic import BaseModel, DirectoryPath, Field, FilePath
 DEFAULT_CONFIG_PATH = Path.cwd() / ".hyperlint.yaml"
 DEFAULT_INI_PATH = Path.cwd() / ".vale.ini"
 DEFAULT_CUSTOM_RULES_PATH = Path.cwd() / "rules"
+DEFAULT_EDIT_MODEL = "anthropic/claude-3-haiku-20240307"
 
 
 class ValeConfig(BaseModel):

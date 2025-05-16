@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-import diskcache
 import instructor
 from litellm import completion
 from loguru import logger
@@ -15,7 +14,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-cache = diskcache.Cache("./data/cache/editing")
+from ..config import DEFAULT_EDIT_MODEL
+
 patched_client = instructor.from_litellm(completion=completion)
 
 DELETE_LINE_MESSAGE = ">>>>>>>>>>>>>>DELETE<<<<<<<<<<<<<<<"
@@ -106,7 +106,7 @@ Rewrite the entire line resolving the issue description. It is imperative to rew
 """
 
             message = patched_client.chat.completions.create(
-                model="anthropic/claude-3-haiku-20240307",
+                model=DEFAULT_EDIT_MODEL,
                 max_tokens=4096,
                 temperature=0.25,
                 messages=[{"role": "user", "content": prompt}],
