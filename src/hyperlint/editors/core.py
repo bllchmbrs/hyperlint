@@ -220,8 +220,6 @@ def prompt_for_approval(
             else issue.issue_message
         )
         # Create syntax objects
-        original_syntax = Syntax(issue.existing_content, "markdown", theme="monokai")
-        proposed_fix_syntax = Syntax(proposed_fix, "markdown", theme="monokai")
 
         console.print(
             Panel.fit(
@@ -231,14 +229,11 @@ def prompt_for_approval(
                 border_style="green",
             )
         )
-        console.print(original_syntax)
-        console.print(
-            Panel.fit(
-                "[bold]Proposed fix:[/bold]",
-                border_style="green",
-            )
-        )
-        console.print(proposed_fix_syntax)
+        # Display the original and proposed fix side by side
+        original_text = Text(f"- {issue.existing_content}", style="red")
+        proposed_text = Text(f"+ {proposed_fix}", style="green")
+        console.print("Line {0}:".format(issue.line), style="bold")
+        console.print(Columns([original_text, proposed_text]))
     elif isinstance(issue, InsertLineIssue):
         # Create syntax object for the insertion
         insertion_syntax = Syntax(issue.insert_content, "markdown", theme="monokai")
@@ -275,14 +270,15 @@ def prompt_for_approval(
 
 class BaseEditor(ABC, BaseModel):
     path: FilePath
+    require_approval: bool = True
+    log_approvals: bool = True
+    is_dry_run: bool = False
     text: str | None = None
     replacements: List[ReplaceLineFixableIssue] = Field(
         default_factory=list, repr=False
     )
     insertions: List[InsertLineIssue] = Field(default_factory=list, repr=False)
     deletions: List[DeleteLineIssue] = Field(default_factory=list, repr=False)
-    require_approval: bool = True
-    log_approvals: bool = True
 
     def get_text(self) -> str:
         if self.text is None:
@@ -328,10 +324,10 @@ class BaseEditor(ABC, BaseModel):
 
     def _approval_filter(
         self,
-        issue: ReplaceLineFixableIssue,
+        issue: ReplaceLineFixableIssue | DeleteLineIssue | InsertLineIssue,
         proposed_fix: str,
     ) -> bool:
-        if self.dry_run:
+        if self.is_dry_run:
             logger.debug("Is dry run, approving")
             return True
         if not self.require_approval:
@@ -404,17 +400,17 @@ class BaseEditor(ABC, BaseModel):
             proposed_fix = deduped_issue.fix(context)
             approved = self._approval_filter(deduped_issue, proposed_fix)
             if approved and proposed_fix != initial_line_lookup[line_no]:
+                changes[line_no] = proposed_fix
                 initial_line_lookup[line_no] = proposed_fix
 
         # Process deletions
         for issue in self.deletions:
             approved = self._approval_filter(issue, "TO DELETE")
             if approved:
+                changes[issue.line] = DELETE_LINE_MESSAGE
                 initial_line_lookup[issue.line] = (
                     DELETE_LINE_MESSAGE  # Mark for deletion
                 )
-
-        logger.success(f"Making {len(changes)} changes")
 
         final_lines: List[str] = []
         sorted_insertions = sorted(self.insertions, key=lambda x: x.line)
@@ -428,7 +424,9 @@ class BaseEditor(ABC, BaseModel):
                 and sorted_insertions[insertion_idx].line == line_no
             ):
                 insert_issue = sorted_insertions[insertion_idx]
-                approved = self._approval_filter(insert_issue, "TO insert")
+                approved = self._approval_filter(
+                    insert_issue, insert_issue.insert_content
+                )
                 # Apply the insertion if approved
                 if approved:
                     final_lines.append(insert_issue.insert_content)
@@ -449,8 +447,7 @@ class BaseEditor(ABC, BaseModel):
         while insertion_idx < len(sorted_insertions):
             insert_issue = sorted_insertions[insertion_idx]
 
-            approved = self._approval_filter(insert_issue, "TO insert")
-            # Apply the insertion if approved
+            approved = self._approval_filter(insert_issue, insert_issue.insert_content)
             if approved:
                 final_lines.append(insert_issue.insert_content)
 
@@ -476,7 +473,7 @@ class BaseEditor(ABC, BaseModel):
                 new_text = Text(f"+ {new_line}", style="green")
                 console.print(Columns([old_text, new_text]))
         approved = console.input(
-            "\n[bold]Apply this change? [y/n]:[/bold] "
+            "\n[bold]Update the file? [y/n]:[/bold] "
         ).lower().strip() in ("y", "yes")
 
         if approved:

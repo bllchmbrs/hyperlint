@@ -33,7 +33,7 @@ def vale(
     path: str,
     vale_config_path: str | None = None,
     dry_run: bool = False,
-    require_approval: bool = False,
+    require_approval: bool = True,
     log_approvals: bool = True,
 ):
     """
@@ -82,8 +82,8 @@ def apply_rules(
     include_rules: List[str] = [],
     exclude_rules: List[str] = [],
     dry_run: bool = False,
-    no_require_approval: bool = False,
-    no_log_approvals: bool = True,
+    require_approval: bool = True,
+    log_approvals: bool = True,
 ):
     """
     Apply AI-powered rules to a document.
@@ -134,9 +134,9 @@ def apply_rules(
         rules_directory=rules_dir_obj,
         include_rules=include_list,
         exclude_rules=exclude_list,
-        dry_run=dry_run,
-        require_approval=not no_require_approval,
-        log_approvals=not no_log_approvals,
+        is_dry_run=dry_run,
+        require_approval=require_approval,
+        log_approvals=log_approvals,
     )
 
     if dry_run:
