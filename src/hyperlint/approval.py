@@ -72,7 +72,7 @@ class ApprovalLog(ABC):
             approved: Whether the action was approved
         """
         # Ensure hyperlint directory exists
-        self.config.ensure_storage_dir()
+        self.config.ensure_storage_dirs()
         log_entry = approval.model_dump()
         log_entry["date"] = datetime.now().isoformat()
         log_entry["file_path"] = str(log_entry["file_path"])
@@ -176,5 +176,5 @@ class EditorApprovalLog(ApprovalLog):
 
     def get_log_file_path(self) -> Path:
         """Get the path to the editor approval log file"""
-        self.config.ensure_storage_dir()
+        self.config.ensure_storage_dirs()
         return self.config.get_judge_data_dir() / "editor_judge.jsonl"

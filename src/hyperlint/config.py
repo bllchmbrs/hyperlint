@@ -83,7 +83,7 @@ class SimpleConfig(BaseModel):
     def get_judge_data_dir(self) -> Path:
         return self.hyperlint_dir / "judge_data"
 
-    def ensure_storage_dir(self):
+    def ensure_storage_dirs(self):
         """
         Create the hyperlint directory if it doesn't exist and return its path.
         """
@@ -96,6 +96,12 @@ class SimpleConfig(BaseModel):
         if not approvals_dir.exists():
             approvals_dir.mkdir(exist_ok=True)
             logger.info(f"Created approvals directory at {approvals_dir}")
+
+        # Create storage data directory
+        storage_data_dir = self.get_storage_data_dir()
+        if not storage_data_dir.exists():
+            storage_data_dir.mkdir(exist_ok=True)
+            logger.info(f"Created storage data directory at {storage_data_dir}")
 
 
 def find_config_file() -> Optional[Path]:
