@@ -5,9 +5,10 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, DirectoryPath, Field, FilePath
 
-DEFAULT_CONFIG_PATH = Path.cwd() / ".hyperlint.yaml"
+DEFAULT_CONFIG_PATH = Path.cwd() / "hyperlint-config.yaml"
 DEFAULT_INI_PATH = Path.cwd() / ".vale.ini"
 DEFAULT_CUSTOM_RULES_PATH = Path.cwd() / "rules"
+DEFAULT_HYPERLINT_STORAGE_DIR = Path.cwd() / ".hyperlint"
 
 DEFAULT_EDIT_MODEL = "anthropic/claude-3-haiku-20240307"
 DEFAULT_RULE_VIOLATION_MODEL = "openai/gpt-4o-mini"
@@ -34,8 +35,9 @@ class SimpleConfig(BaseModel):
     # Global settings
 
     dry_run: bool = False
-    require_approval: bool = True
+    approval_mode: bool = True
     log_approvals: bool = True
+    hyperlint_dir: DirectoryPath = Field(default=Path(DEFAULT_HYPERLINT_STORAGE_DIR))
     enabled_editors: List[Literal["vale", "custom_rules"]] = Field(
         default_factory=lambda: ["vale", "custom_rules"]
     )
@@ -72,6 +74,23 @@ class SimpleConfig(BaseModel):
                     logger.warning(f"Unknown CLI argument: {key}")
 
         return merged
+
+    def get_judge_data_dir(self) -> Path:
+        return self.hyperlint_dir / "edit_judge_data"
+
+    def ensure_storage_dir(self):
+        """
+        Create the hyperlint directory if it doesn't exist and return its path.
+        """
+        if not self.hyperlint_dir.exists():
+            self.hyperlint_dir.mkdir(exist_ok=True)
+            logger.info(f"Created hyperlint directory at {self.hyperlint_dir}")
+
+        # Create approvals directory
+        approvals_dir = self.get_judge_data_dir()
+        if not approvals_dir.exists():
+            approvals_dir.mkdir(exist_ok=True)
+            logger.info(f"Created approvals directory at {approvals_dir}")
 
 
 def find_config_file() -> Optional[Path]:

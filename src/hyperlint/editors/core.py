@@ -3,7 +3,6 @@ import json
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import instructor
@@ -27,24 +26,6 @@ def diff(old: str, new: str):
         new.splitlines(),
     )
     return "\n".join(diff)
-
-
-def ensure_hyperlint_dir() -> Path:
-    """
-    Create the .hyperlint directory if it doesn't exist and return its path.
-    """
-    hyperlint_dir = Path.cwd() / ".hyperlint"
-    if not hyperlint_dir.exists():
-        hyperlint_dir.mkdir(exist_ok=True)
-        logger.info(f"Created .hyperlint directory at {hyperlint_dir}")
-
-    # Create approvals directory
-    approvals_dir = hyperlint_dir / "approvals"
-    if not approvals_dir.exists():
-        approvals_dir.mkdir(exist_ok=True)
-        logger.info(f"Created approvals directory at {approvals_dir}")
-
-    return hyperlint_dir
 
 
 def get_issue_type(issue) -> str:
@@ -163,6 +144,7 @@ def log_approval_decision(
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "file": str(file_path),
+        "issue_type": issue_type,
         "line": issue.line,
         "approved": approved,
     }
@@ -180,10 +162,10 @@ def log_approval_decision(
 
     # Ensure .hyperlint directory exists
     hyperlint_dir = ensure_hyperlint_dir()
-    approvals_dir = hyperlint_dir / "approvals"
+    approvals_dir = hyperlint_dir / "edit_judge_data"
 
     # Create log file path
-    log_file = approvals_dir / f"{issue_type}.jsonl"
+    log_file = approvals_dir / "changes.jsonl"
 
     # Append to log file
     with open(log_file, "a") as f:
