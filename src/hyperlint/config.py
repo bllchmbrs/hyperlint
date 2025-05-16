@@ -81,10 +81,10 @@ class SimpleConfig(BaseModel):
         return self.hyperlint_dir / "edit_judge_data"
 
     def get_approval_path(self) -> Path:
-        return self.get_judge_data_dir() / "approvals.jsonl"
+        return self.get_judge_data_dir() / "editor_judge.jsonl"
 
-    def get_judge_path(self):
-        return self.hyperlint_dir / "judge_model.json"
+    def get_image_judge_path(self):
+        return self.hyperlint_dir / "image_judge.jsonl"
 
     def ensure_storage_dir(self):
         """
