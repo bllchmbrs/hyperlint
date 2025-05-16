@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from loguru import logger
-from pydantic import FilePath
 
 from .core import BaseEditor, LineIssue, ReplaceLineFixableIssue
 
@@ -136,16 +135,16 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
 
 
 class ValeEditor(BaseEditor):
-    vale_config_path: FilePath
-
     def prerun_checks(self) -> bool:
         vale_installed = check_vale_installation()
-        vale_config_exists = os.path.exists(str(self.vale_config_path))
+        config_path = self.config.vale.config_path
+        vale_config_exists = os.path.exists(str(config_path))
         return vale_installed and vale_config_exists
 
     def collect_issues(self) -> None:
         """Runs Vale and adds any reported issues as replacement issues."""
-        issues = run_vale(self.get_text(), str(self.vale_config_path))
+        config_path = self.config.vale.config_path
+        issues = run_vale(self.get_text(), str(config_path))
         if not issues:
             logger.info("Vale reported no issues.")
             return

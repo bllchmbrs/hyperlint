@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import typer
 
-from .config import DEFAULT_CONFIG_PATH, DEFAULT_INI_PATH, create_default_config
+from .config import DEFAULT_CONFIG_PATH, create_default_config, load_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
 
@@ -35,6 +35,7 @@ def vale(
     dry_run: bool = False,
     require_approval: bool = True,
     log_approvals: bool = True,
+    config_path: Optional[Path] = None,
 ):
     """
     Run Vale on a file to identify style issues.
@@ -57,19 +58,19 @@ def vale(
     """
     path_obj = Path(path)
 
-    # Determine Vale config path
-    if vale_config_path:
-        vale_config_path_final = Path(vale_config_path)
-    else:
-        vale_config_path_final = DEFAULT_INI_PATH
+    # Load configuration
+    config = load_config(config_path)
 
-    editor = ValeEditor(
-        path=path_obj,
-        vale_config_path=vale_config_path_final,
-        require_approval=require_approval,
-        log_approvals=log_approvals,
-    )
+    # Override config values with CLI parameters
     if dry_run:
+        config.dry_run = True
+    if require_approval is not None:
+        config.approval_mode = require_approval
+    if log_approvals is not None:
+        config.log_approvals = log_approvals
+
+    editor = ValeEditor(path=path_obj, config=config)
+    if config.dry_run:
         editor.dry_run()
     else:
         editor.update_file()
@@ -78,12 +79,13 @@ def vale(
 @edit_app.command(name="rules")
 def apply_rules(
     path: str,
-    rules_directory: str,
+    rules_directory: str | None = None,
     include_rules: List[str] = [],
     exclude_rules: List[str] = [],
     dry_run: bool = False,
     require_approval: bool = True,
     log_approvals: bool = True,
+    config_path: Optional[Path] = None,
 ):
     """
     Apply AI-powered rules to a document.
@@ -110,8 +112,20 @@ def apply_rules(
         # Don't log approval decisions
         hyperlint rules apply README.md rules/ --no-log-approvals
     """
+    # Load configuration
+    config = load_config(config_path)
+
+    # Override config values with CLI parameters
+    if dry_run:
+        config.dry_run = True
+    if require_approval is not None:
+        config.approval_mode = require_approval
+    if log_approvals is not None:
+        config.log_approvals = log_approvals
+    if rules_directory is not None:
+        config.custom_rules.rules_directory = Path(rules_directory)
+
     path_obj = Path(path)
-    rules_dir_obj = Path(rules_directory)
 
     # Handle include_rules and exclude_rules list parsing
     include_list = []
@@ -123,23 +137,21 @@ def apply_rules(
         else:
             include_list = include_rules
 
+    if include_list:
+        config.custom_rules.include_rules = include_list
+
     if exclude_rules:
         if len(exclude_rules) == 1 and "," in exclude_rules[0]:
             exclude_list = exclude_rules[0].split(",")
         else:
             exclude_list = exclude_rules
 
-    editor = RulesEditor(
-        path=path_obj,
-        rules_directory=rules_dir_obj,
-        include_rules=include_list,
-        exclude_rules=exclude_list,
-        is_dry_run=dry_run,
-        require_approval=require_approval,
-        log_approvals=log_approvals,
-    )
+    if exclude_list:
+        config.custom_rules.exclude_rules = exclude_rules
 
-    if dry_run:
+    editor = RulesEditor(path=path_obj, config=config)
+
+    if config.dry_run:
         editor.dry_run()
     else:
         editor.update_file()

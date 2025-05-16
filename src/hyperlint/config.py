@@ -22,7 +22,8 @@ class ValeConfig(BaseModel):
 
 class CustomRulesConfig(BaseModel):
     rules_directory: DirectoryPath = Field(default=Path(DEFAULT_CUSTOM_RULES_PATH))
-    enabled_rules: List[str] = Field(default_factory=lambda: [])  # all rules
+    include_rules: List[str] = Field(default_factory=list)
+    exclude_rules: List[str] = Field(default_factory=list)
 
 
 class SimpleConfig(BaseModel):
@@ -119,3 +120,22 @@ def create_default_config(path: Path = DEFAULT_CONFIG_PATH) -> None:
 
     with open(path, "w") as f:
         f.write(final_content)
+
+
+def load_config(config_path: Optional[Path] = None) -> SimpleConfig:
+    """
+    Load configuration with fallbacks:
+    1. Use specified config path if provided
+    2. Search for config in standard locations
+    3. Create default config if none found
+    """
+    if config_path and config_path.exists():
+        return SimpleConfig.from_yaml(config_path)
+
+    # Find config in standard locations
+    found_config = find_config_file()
+    if found_config:
+        return SimpleConfig.from_yaml(found_config)
+
+    # Use default config
+    return SimpleConfig()

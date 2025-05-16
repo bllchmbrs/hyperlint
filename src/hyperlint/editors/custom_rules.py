@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from typing import Dict, List, Literal
 
 import diskcache
@@ -59,31 +58,32 @@ class RulesEditor(BaseEditor):
     using AI to apply changes to the document.
     """
 
-    rules_directory: Path
-    include_rules: List[str] = Field(default_factory=list)
-    exclude_rules: List[str] = Field(default_factory=list)
     applied_rules: List[str] = Field(default_factory=list)
-    require_approval: bool = True
-    log_approvals: bool = True
 
     def prerun_checks(self) -> bool:
         """
         Validate that the rules directory exists and contains valid rules.
         """
-        if not self.rules_directory.exists():
-            logger.error(f"Rules directory does not exist: {self.rules_directory}")
+        rules_dir = self.config.custom_rules.rules_directory
+
+        if not rules_dir.exists():
+            logger.error(f"Rules directory does not exist: {rules_dir}")
             return False
 
-        if not self.rules_directory.is_dir():
-            logger.error(f"Rules directory is not a directory: {self.rules_directory}")
+        if not rules_dir.is_dir():
+            logger.error(f"Rules directory is not a directory: {rules_dir}")
             return False
 
         rules = self._load_rules()
         if not rules:
-            logger.warning(f"No rules found in directory: {self.rules_directory}")
+            logger.warning(
+                f"No rules found in directory: {self.config.custom_rules.rules_directory}"
+            )
             return False
 
-        logger.success(f"Found {len(rules)} rules in directory: {self.rules_directory}")
+        logger.success(
+            f"Found {len(rules)} rules in directory: {self.config.custom_rules.rules_directory}"
+        )
         return True
 
     def _load_rules(self) -> Dict[str, str]:
@@ -94,8 +94,9 @@ class RulesEditor(BaseEditor):
             Dict[str, str]: Dictionary of rule name to rule content.
         """
         rules = {}
+        rules_dir = self.config.custom_rules.rules_directory
 
-        for file_path in self.rules_directory.glob("*.md"):
+        for file_path in rules_dir.glob("*.md"):
             rule_name = file_path.stem
             try:
                 with open(file_path, "r") as f:
@@ -119,23 +120,23 @@ class RulesEditor(BaseEditor):
         """
         filtered_rules = {}
 
-        # If include_rules is specified, only include those rules
-        if self.include_rules:
-            for rule_name in self.include_rules:
+        # If config.include_rules is specified, only include those rules
+        if self.config.custom_rules.include_rules:
+            for rule_name in self.config.custom_rules.include_rules:
                 if rule_name in rules:
                     filtered_rules[rule_name] = rules[rule_name]
                 else:
                     logger.warning(f"Included rule not found: {rule_name}")
         else:
-            # Otherwise, include all rules except those in exclude_rules
+            # Otherwise, include all rules except those in config.exclude_rules
             filtered_rules = {
                 rule_name: rule_content
                 for rule_name, rule_content in rules.items()
-                if rule_name not in self.exclude_rules
+                if rule_name not in self.config.custom_rules.exclude_rules
             }
 
             # Log excluded rules
-            for rule_name in self.exclude_rules:
+            for rule_name in self.config.custom_rules.exclude_rules:
                 if rule_name in rules:
                     logger.info(f"Excluding rule: {rule_name}")
                 else:
@@ -178,6 +179,7 @@ class RulesEditor(BaseEditor):
                         issue_message=[
                             f"Rule '{rule_name}': {violation.issue_message}"
                         ],
+                        existing_content=line_lookup[violation.line_number],
                     )
                 )
 

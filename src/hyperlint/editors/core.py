@@ -15,7 +15,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE
+from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE, SimpleConfig
 
 patched_client = instructor.from_litellm(completion=completion)
 
@@ -119,6 +119,8 @@ class InsertLineIssue(BaseModel):
 
 
 class DeleteLineIssue(LineIssue):
+    existing_content: str
+    
     def fix(self) -> str:
         return DELETE_LINE_MESSAGE
 
@@ -129,6 +131,7 @@ def log_approval_decision(
     approved: bool,
     fix: Optional[str] = None,
     file_path: Optional[str] = None,
+    config: Optional[SimpleConfig] = None,
 ) -> None:
     """
     Log the approval decision to a JSONL file.
@@ -139,7 +142,12 @@ def log_approval_decision(
         approved: Whether the fix was approved
         fix: The proposed fix (for replacements)
         file_path: The path to the file being edited
+        config: Configuration object (uses default if None)
     """
+    # Use default config if none provided
+    if config is None:
+        config = SimpleConfig()
+        
     # Create log entry
     log_entry = {
         "timestamp": datetime.now().isoformat(),
@@ -158,11 +166,10 @@ def log_approval_decision(
         log_entry["content_after"] = issue.insert_content
     elif isinstance(issue, DeleteLineIssue):
         log_entry["issue_message"] = issue.issue_message
-        log_entry["content_before"] = issue.existing_content
 
-    # Ensure .hyperlint directory exists
-    hyperlint_dir = ensure_hyperlint_dir()
-    approvals_dir = hyperlint_dir / "edit_judge_data"
+    # Ensure hyperlint directory exists
+    config.ensure_storage_dir()
+    approvals_dir = config.get_judge_data_dir()
 
     # Create log file path
     log_file = approvals_dir / "changes.jsonl"
@@ -252,10 +259,8 @@ def prompt_for_approval(
 
 class BaseEditor(ABC, BaseModel):
     path: FilePath
-    require_approval: bool = True
-    log_approvals: bool = True
-    is_dry_run: bool = False
     text: str | None = None
+    config: SimpleConfig = Field(default_factory=lambda: SimpleConfig())
     replacements: List[ReplaceLineFixableIssue] = Field(
         default_factory=list, repr=False
     )
@@ -309,10 +314,10 @@ class BaseEditor(ABC, BaseModel):
         issue: ReplaceLineFixableIssue | DeleteLineIssue | InsertLineIssue,
         proposed_fix: str,
     ) -> bool:
-        if self.is_dry_run:
+        if self.config.dry_run:
             logger.debug("Is dry run, approving")
             return True
-        if not self.require_approval:
+        if not self.config.approval_mode:
             logger.debug("does not require approval")
             return True
 
@@ -321,13 +326,14 @@ class BaseEditor(ABC, BaseModel):
         )
 
         # Log decision if enabled
-        if self.log_approvals:
+        if self.config.log_approvals:
             log_approval_decision(
                 issue_type=get_issue_type(issue),
                 issue=issue,
                 approved=approved,
                 fix=proposed_fix,
                 file_path=str(self.path),
+                config=self.config,
             )
 
         return approved
@@ -465,8 +471,15 @@ class BaseEditor(ABC, BaseModel):
         return path
 
     def dry_run(self):
+        # Ensure dry run mode is active
+        old_dry_run = self.config.dry_run
+        self.config.dry_run = True
+        
         path = self.path
         original_text = self.get_text()
         final_content = self.generate_v2()
         print(diff(original_text, final_content))
+        
+        # Restore original dry run setting
+        self.config.dry_run = old_dry_run
         return path
