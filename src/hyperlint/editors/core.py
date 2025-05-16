@@ -14,11 +14,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from ..config import DEFAULT_EDIT_MODEL
+from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE
 
 patched_client = instructor.from_litellm(completion=completion)
-
-DELETE_LINE_MESSAGE = ">>>>>>>>>>>>>>DELETE<<<<<<<<<<<<<<<"
 
 
 def ensure_hyperlint_dir() -> Path:
