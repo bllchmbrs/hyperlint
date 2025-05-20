@@ -17,3 +17,9 @@ CLAUDE.md
 plans/
 repomix-output.xml
 old/
+dev.ipynb
+**/.ipynb_checkpoints
+planning/
+.mypy_cache/
+.pytest_cache/
+.hyperlint/

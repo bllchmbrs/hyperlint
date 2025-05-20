@@ -1,0 +1,12 @@
+# Hyperlint Configuration
+vale:
+  config_path: !!python/object/apply:pathlib.PosixPath
+  - .vale.ini
+custom_rules:
+  rules_directory: !!python/object/apply:pathlib.PosixPath
+  - rules
+  enabled_rules: []
+dry_run: false
+enabled_editors:
+- vale
+- custom_rules

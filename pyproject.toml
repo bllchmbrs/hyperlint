@@ -1,5 +1,5 @@
 [project]
-name = "editai"
+name = "hyperlint"
 version = "0.1.0"
 description = "A Python CLI tool for editing and improving Markdown documentation"
 readme = "README.md"
@@ -9,10 +9,13 @@ dependencies = [
     "instructor>=1.7.9",
     "litellm>=1.67.2",
     "loguru>=0.7.3",
+    "rich>=13.7.0",
     "smolcrawl>=0.1.7",
     "spacy>=3.8.5",
     "typer>=0.15.2",
     "pyyaml>=6.0.1",
+    "dspy>=2.6.23",
+    "crawl4ai>=0.6.3",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +28,7 @@ test = [
 ]
 
 [project.scripts]
-editai = "editai.cli:app"
+hyperlint = "hyperlint.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -34,4 +37,14 @@ python_functions = "test_*"
 
 [tool.pyright]
 venvPath = "."
-venv='.venv'
+venv = '.venv'
+
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.4.2",
+    "mypy>=1.15.0",
+    "pytest>=8.3.5",
+    "ruff>=0.11.10",
+    "types-pygments>=2.19.0.20250514",
+    "types-pyyaml>=6.0.12.20250402",
+]
