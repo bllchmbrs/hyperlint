@@ -2,6 +2,7 @@ import json
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from loguru import logger
 from pydantic import BaseModel
@@ -31,6 +32,17 @@ class EditorApprovalRequest(BaseModel):
 
 class EditorApproval(ApprovalRequest, EditorApprovalRequest):
     pass
+
+
+class MediaApproval(ApprovalRequest):
+    original_prompt: str
+    refined_prompt: str
+    context_text: str
+    media_type: str
+    feedback: Optional[str] = None
+    file_path: Path
+
+    model_config = {"json_encoders": {Path: str}}
 
 
 class ApprovalLog(ABC):
@@ -67,15 +79,15 @@ class ApprovalLog(ABC):
         Log the approval decision.
 
         Args:
-            decision_type: Type of decision (e.g., "edit", "create", "delete")
-            context: A dictionary containing all relevant information about the decision
-            approved: Whether the action was approved
+            approval: ApprovalRequest object containing the decision and context
         """
         # Ensure hyperlint directory exists
         self.config.ensure_storage_dirs()
         log_entry = approval.model_dump()
         log_entry["date"] = datetime.now().isoformat()
-        log_entry["file_path"] = str(log_entry["file_path"])
+        # Ensure file_path is a string for JSON serialization if it exists
+        if "file_path" in log_entry and isinstance(log_entry["file_path"], Path):
+            log_entry["file_path"] = str(log_entry["file_path"])
 
         # Get log file path and write to it
         log_file = self.get_log_file_path()
@@ -178,3 +190,65 @@ class EditorApprovalLog(ApprovalLog):
         """Get the path to the editor approval log file"""
         self.config.ensure_storage_dirs()
         return self.config.get_judge_data_dir() / "editor_judge.jsonl"
+
+
+class MediaApprovalLog(ApprovalLog):
+    """
+    Approval log specifically for media generation operations.
+    """
+
+    def __init__(self, config: SimpleConfig):
+        super().__init__(config)
+        self.decision_type = "media"
+
+    def prompt_for_approval(self, approval_request: MediaApproval) -> bool:
+        """
+        Prompt the user to approve a generated media.
+
+        Args:
+            approval_request: MediaApproval object containing:
+                - original_prompt: The initial prompt for media generation
+                - refined_prompt: The refined prompt used for media generation
+                - context_text: Text context used for media generation
+                - media_type: Type of media (e.g., "image", "audio")
+                - file_path: Path to the generated media file
+
+        Returns:
+            bool: True if approved, False otherwise
+        """
+        console = Console()
+
+        console.print(
+            Panel.fit(
+                f"[bold]Media Type:[/bold] {approval_request.media_type}\n"
+                f"[bold]File Path:[/bold] {approval_request.file_path}\n\n"
+                f"[bold]Original Prompt:[/bold]\n{approval_request.original_prompt}\n\n"
+                f"[bold]Refined Prompt:[/bold]\n{approval_request.refined_prompt}\n\n"
+                f"[bold]Context Text:[/bold]\n{approval_request.context_text}",
+                title="[bold blue]Media Approval Needed[/bold blue]",
+                border_style="blue",
+            )
+        )
+
+        approved_input = console.input(
+            "\n[bold]Approve this media? [y/n]:[/bold] "
+        ).lower().strip()
+        approved = approved_input in ("y", "yes")
+
+        # Create a new MediaApproval instance that includes the decision
+        # This is because the approval_request passed in doesn't have the 'approved' field set yet.
+        # self.log_decision expects it.
+        final_approval_decision = MediaApproval(
+            **approval_request.model_dump(exclude={"approved", "feedback"}),  # Exclude existing approved/feedback if any
+            approved=approved,
+            feedback=approval_request.feedback # Preserve original feedback if any, or allow new later
+        )
+        # Log the decision
+        self.log_decision(final_approval_decision)
+
+        return approved
+
+    def get_log_file_path(self) -> Path:
+        """Get the path to the media approval log file"""
+        self.config.ensure_storage_dirs()
+        return self.config.get_judge_data_dir() / "media_approvals.jsonl"
