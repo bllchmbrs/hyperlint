@@ -65,7 +65,7 @@ def check_vale_installation() -> bool:
         return False
 
 
-def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
+def run_vale(text: str, vale_config_path: str, is_mdx: bool = False) -> List[LineIssue]:
     if not check_vale_installation():
         logger.error("Vale is not installed or not found in PATH")
         return []
@@ -73,8 +73,9 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
     vale_dir = os.environ.get("PROJECT_ROOT", os.getcwd())
 
     # Create a temporary file and ensure it's written and closed
+    suffix = ".mdx" if is_mdx else ".md"
     with tempfile.NamedTemporaryFile(
-        dir=vale_dir, mode="w", suffix=".md", delete=False
+        dir=vale_dir, mode="w", suffix=suffix, delete=False
     ) as temp_file:
         temp_file.write(text)
         temp_file_path = temp_file.name
@@ -137,6 +138,7 @@ def run_vale(text: str, vale_config_path: str) -> List[LineIssue]:
 
 class ValeEditor(BaseEditor):
     def model_post_init(self, context: Any, /) -> None:
+        super().model_post_init(context)
         self.approval_log = EditorApprovalLog(self.config)
 
     def prerun_checks(self) -> bool:
@@ -148,7 +150,7 @@ class ValeEditor(BaseEditor):
     def collect_issues(self) -> None:
         """Runs Vale and adds any reported issues as replacement issues."""
         config_path = self.config.vale.config_path
-        issues = run_vale(self.get_text(), str(config_path))
+        issues = run_vale(self.get_text(), str(config_path), self.is_mdx)
         if not issues:
             logger.info("Vale reported no issues.")
             return
@@ -157,6 +159,11 @@ class ValeEditor(BaseEditor):
         replacements_count = 0
 
         for issue in issues:
+            # Skip issues in MDX protected regions
+            if self.is_mdx and self.mdx_parser and self.mdx_parser.is_protected_line(issue.line):
+                logger.debug(f"Skipping Vale issue for protected MDX line {issue.line}")
+                continue
+                
             # Ensure the line number from Vale is valid
             if issue.line in line_lookup:
                 replacement_issue = ReplaceLineFixableIssue(

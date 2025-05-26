@@ -1,7 +1,7 @@
 import difflib
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import instructor
 from litellm import completion
@@ -13,6 +13,7 @@ from rich.text import Text
 
 from ..approval import EditorApprovalRequest, get_approval_log
 from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE, SimpleConfig
+from ..utils import MDXParser
 
 patched_client = instructor.from_litellm(completion=completion)
 
@@ -136,6 +137,14 @@ class BaseEditor(ABC, BaseModel):
     insertions: List[InsertLineIssue] = Field(default_factory=list, repr=False)
     deletions: List[DeleteLineIssue] = Field(default_factory=list, repr=False)
     editor_type: str = "editor"
+    is_mdx: bool = False
+    mdx_parser: Optional[MDXParser] = Field(default=None, repr=False)
+
+    def model_post_init(self, __context: Any, /) -> None:
+        """Initialize MDX parser if file is MDX."""
+        self.is_mdx = self.path.suffix.lower() == ".mdx"
+        if self.is_mdx:
+            self.mdx_parser = MDXParser(self.get_text())
 
     def get_text(self) -> str:
         if self.text is None:
@@ -187,6 +196,13 @@ class BaseEditor(ABC, BaseModel):
         issue: ReplaceLineFixableIssue | DeleteLineIssue | InsertLineIssue,
         proposed_fix: str,
     ) -> bool:
+        # Check if line is in MDX protected region
+        if self.is_mdx and self.mdx_parser:
+            line_number = getattr(issue, 'line', None)
+            if line_number and self.mdx_parser.is_protected_line(line_number):
+                logger.warning(f"Skipping protected MDX line {line_number}")
+                return False
+        
         if self.config.dry_run:
             logger.debug("Is dry run, approving")
             return True
