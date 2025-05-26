@@ -50,7 +50,7 @@ class ApprovalLog(ABC):
         self.decision_type = "editor"
 
     @abstractmethod
-    def prompt_for_approval(self, *args, **kwargs) -> bool:
+    def prompt_for_approval(self, context) -> bool:
         """
         Prompt the user to approve a proposed action.
 
@@ -62,7 +62,7 @@ class ApprovalLog(ABC):
         """
         pass
 
-    def log_decision(self, approval: ApprovalRequest) -> None:
+    def log_decision(self, decision_type: str, context: dict, approved: bool) -> None:
         """
         Log the approval decision.
 
@@ -73,16 +73,29 @@ class ApprovalLog(ABC):
         """
         # Ensure hyperlint directory exists
         self.config.ensure_storage_dirs()
-        log_entry = approval.model_dump()
-        log_entry["date"] = datetime.now().isoformat()
-        log_entry["file_path"] = str(log_entry["file_path"])
+        
+        # Convert context to a JSON-serializable format
+        serializable_context = {}
+        for key, value in context.items():
+            if hasattr(value, 'model_dump'):  # Pydantic object
+                serializable_context[key] = value.model_dump()
+            else:
+                serializable_context[key] = value
+        
+        log_entry = {
+            "decision_type": decision_type,
+            "approved": approved,
+            "date": datetime.now().isoformat(),
+            "file_path": str(context.get("file_path", "")),
+            "context": serializable_context
+        }
 
         # Get log file path and write to it
         log_file = self.get_log_file_path()
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
 
-        logger.debug(f"Logged {self.decision_type} approval decision to {log_file}")
+        logger.debug(f"Logged {decision_type} approval decision to {log_file}")
 
     @abstractmethod
     def get_log_file_path(self) -> Path:
@@ -96,9 +109,9 @@ class ApprovalLog(ABC):
         pass
 
 
-class EditorApprovalLog(ApprovalLog):
+class ConsoleEditorApprovalLog(ApprovalLog):
     """
-    Approval log specifically for text editing operations.
+    Console-based approval log specifically for text editing operations.
     Handles replacements, insertions, and deletions.
     """
 
@@ -106,51 +119,46 @@ class EditorApprovalLog(ApprovalLog):
         super().__init__(config)
         self.decision_type = "editor"
 
-    def prompt_for_approval(self, approval_request: EditorApprovalRequest) -> bool:
+    def prompt_for_approval(self, context) -> bool:
         """
         Prompt the user to approve a proposed edit.
 
         Args:
-            approval_request: EditorApprovalRequest object containing:
+            context: A dictionary containing:
+                - issue: Issue object (ReplaceLineFixableIssue, DeleteLineIssue, InsertLineIssue)
+                - proposed_fix: The proposed fix content
                 - file_path: Path to the file being edited
-                - issue_type: Type of issue (replacement, insertion, deletion)
-                - line: Line number where the issue occurs
-                - issue_messages: Description of the issue
-                - existing_content: Current content (for replacements and deletions)
-                - replacement_content: Proposed new content (for replacements and insertions)
 
         Returns:
             bool: True if approved, False otherwise
         """
+        issue = context.get('issue')
+        proposed_fix = context.get('proposed_fix')
+        file_path = context.get('file_path')
 
-        file_info = (
-            f"File: {approval_request.file_path}" if approval_request.file_path else ""
-        )
-        line_info = f"Line: {approval_request.line}"
-        issue_messages = approval_request.issue_messages
+        file_info = f"File: {file_path}" if file_path else ""
+        line_info = f"Line: {issue.line}"
         console = Console()
-        console.print("Hello")
 
-        if approval_request.issue_type in ("replace", "delete"):
+        if hasattr(issue, 'existing_content'):  # Replace or Delete issue
+            issue_messages = "\n".join(issue.issue_message) if hasattr(issue, 'issue_message') else "Issue detected"
             console.print(
                 Panel.fit(
                     f"{file_info}\n{line_info}\n\n[bold]Issue:[/bold]\n{issue_messages}\n\n"
                     f"[bold]Original:[/bold]",
-                    title="[bold green]Replacement Needed[/bold green]",
+                    title="[bold green]Change Needed[/bold green]",
                     border_style="green",
                 )
             )
             # Display the original and proposed fix side by side
-            original_text = Text(f"- {approval_request.existing_content}", style="red")
-            proposed_text = Text(
-                f"+ {approval_request.replacement_content}", style="green"
-            )
-            console.print("Line {0}:".format(approval_request.line), style="bold")
+            original_text = Text(f"- {issue.existing_content}", style="red")
+            proposed_text = Text(f"+ {proposed_fix}", style="green")
+            console.print("Line {0}:".format(issue.line), style="bold")
             console.print(Columns([original_text, proposed_text]))
-        elif approval_request.issue_type == "insert":
+        elif hasattr(issue, 'insert_content'):  # Insert issue
             # Create syntax object for the insertion
             insertion_syntax = Syntax(
-                approval_request.replacement_content or "", "markdown", theme="monokai"
+                proposed_fix or "", "markdown", theme="monokai"
             )
 
             console.print(
@@ -167,10 +175,7 @@ class EditorApprovalLog(ApprovalLog):
         ).lower().strip() in ("y", "yes")
 
         # Log the decision
-        editor_approval = EditorApproval(
-            **approval_request.model_dump(), approved=approved
-        )
-        self.log_decision(editor_approval)
+        self.log_decision(self.decision_type, context, approved)
 
         return approved
 
@@ -178,3 +183,99 @@ class EditorApprovalLog(ApprovalLog):
         """Get the path to the editor approval log file"""
         self.config.ensure_storage_dirs()
         return self.config.get_judge_data_dir() / "editor_judge.jsonl"
+
+
+class EditorApprovalLog(ConsoleEditorApprovalLog):
+    """
+    Alias for ConsoleEditorApprovalLog for backward compatibility.
+    """
+    pass
+
+
+class SilentApprovalLog(ApprovalLog):
+    """
+    Silent approval log that always approves without user interaction.
+    Useful for dry runs and automated processing.
+    """
+
+    def __init__(self, config: SimpleConfig):
+        super().__init__(config)
+        self.decision_type = "silent"
+
+    def prompt_for_approval(self, context) -> bool:
+        """
+        Always approve without prompting the user.
+        
+        Args:
+            context: A dictionary containing approval context
+            
+        Returns:
+            bool: Always True
+        """
+        # Log the decision
+        self.log_decision(self.decision_type, context, True)
+        
+        return True
+
+    def get_log_file_path(self) -> Path:
+        """Get the path to the silent approval log file"""
+        self.config.ensure_storage_dirs()
+        return self.config.get_judge_data_dir() / "silent_judge.jsonl"
+
+
+class ImageApprovalLog(ApprovalLog):
+    """
+    Image-based approval log for visual approval workflows.
+    """
+
+    def __init__(self, config: SimpleConfig):
+        super().__init__(config)
+        self.decision_type = "image"
+
+    def prompt_for_approval(self, context) -> bool:
+        """
+        Placeholder for image-based approval.
+        Currently falls back to console approval.
+        
+        Args:
+            context: A dictionary containing approval context
+            
+        Returns:
+            bool: Approval decision
+        """
+        # For now, fall back to console approval
+        console_log = ConsoleEditorApprovalLog(self.config)
+        return console_log.prompt_for_approval(context)
+
+    def get_log_file_path(self) -> Path:
+        """Get the path to the image approval log file"""
+        self.config.ensure_storage_dirs()
+        return self.config.get_judge_data_dir() / "image_judge.jsonl"
+
+
+def get_approval_log(config: SimpleConfig, approval_type: str | None = None) -> ApprovalLog:
+    """
+    Factory function to create the appropriate approval log instance.
+    
+    Args:
+        config: SimpleConfig instance
+        approval_type: Type of approval log ("console", "image", "silent", None)
+                      If None, uses config.approval_type or defaults to "console"
+                      
+    Returns:
+        ApprovalLog: The appropriate approval log instance
+    """
+    # Check for dry run override
+    if config.dry_run:
+        return SilentApprovalLog(config)
+    
+    # Determine approval type
+    if approval_type is None:
+        approval_type = getattr(config, 'approval_type', 'console')
+    
+    if approval_type == "silent":
+        return SilentApprovalLog(config)
+    elif approval_type == "image":
+        return ImageApprovalLog(config)
+    else:  # Default to console
+        return ConsoleEditorApprovalLog(config)

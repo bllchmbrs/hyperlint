@@ -76,7 +76,7 @@ def vale(
 @edit_app.command(name="rules")
 def apply_rules(
     path: str,
-    rules_directory: str | None = None,
+    rules_directory: str,
     include_rules: List[str] = [],
     exclude_rules: List[str] = [],
     dry_run: bool = False,
@@ -117,8 +117,9 @@ def apply_rules(
         config.dry_run = True
     if require_approval is not None:
         config.approval_mode = require_approval
-    if rules_directory is not None:
-        config.custom_rules.rules_directory = Path(rules_directory)
+    
+    # Always set rules directory since it's now required
+    config.custom_rules.rules_directory = Path(rules_directory)
 
     path_obj = Path(path)
 
@@ -144,7 +145,14 @@ def apply_rules(
     if exclude_list:
         config.custom_rules.exclude_rules = exclude_rules
 
-    editor = RulesEditor(path=path_obj, config=config)
+    editor = RulesEditor(
+        path=path_obj, 
+        config=config,
+        rules_directory=Path(rules_directory),
+        include_rules=include_list,
+        exclude_rules=exclude_list,
+        dry_run=dry_run
+    )
 
     if config.dry_run:
         editor.dry_run()

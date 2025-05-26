@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from ..config import DEFAULT_RULE_VIOLATION_MODEL
 from .core import BaseEditor, DeleteLineIssue, ReplaceLineFixableIssue
 
-openapi_key = os.environ["OPENAI_API_KEY"]
+openapi_key = os.getenv("OPENAI_API_KEY", "")
 lm = dspy.LM(DEFAULT_RULE_VIOLATION_MODEL, api_key=openapi_key)
 
 
@@ -54,6 +54,32 @@ class RulesEditor(BaseEditor):
     """
 
     applied_rules: List[str] = Field(default_factory=list)
+
+    def __init__(
+        self,
+        rules_directory=None,
+        include_rules=None,
+        exclude_rules=None,
+        dry_run=None,
+        **kwargs,
+    ):
+        """Initialize RulesEditor with optional rules directory and rule filtering overrides."""
+        super().__init__(**kwargs)
+
+        # Override rules directory if provided
+        if rules_directory is not None:
+            # Update the config to use the provided rules directory
+            self.config.custom_rules.rules_directory = rules_directory
+
+        # Override include/exclude rules if provided
+        if include_rules is not None:
+            self.config.custom_rules.include_rules = include_rules
+        if exclude_rules is not None:
+            self.config.custom_rules.exclude_rules = exclude_rules
+
+        # Override dry_run if provided
+        if dry_run is not None:
+            self.config.dry_run = dry_run
 
     def prerun_checks(self) -> bool:
         """
@@ -153,6 +179,13 @@ class RulesEditor(BaseEditor):
 
         if not issues:
             logger.info(f"No issues found for rule: {rule_name}")
+            return
+
+        # In dry run mode, don't actually add issues but do track applied rules
+        if self.config.dry_run:
+            logger.info(
+                f"Dry run: Found {len(issues)} issues for rule {rule_name}, but not applying changes"
+            )
             return
 
         # Process each violation and create appropriate issue objects

@@ -19,7 +19,7 @@ Another paragraph.
 
 export default Button
 """
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # Import statement should be protected
         assert parser.is_protected_line(3)
@@ -46,7 +46,7 @@ export default Button
 
 Normal text."""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # Self-closing component should be protected
         assert parser.is_protected_line(3)
@@ -66,7 +66,7 @@ Some text with {variable} expression.
 
 Regular text."""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # Line with JSX expression should be protected
         assert parser.is_protected_line(3)
@@ -87,7 +87,7 @@ Regular text."""
   </InnerComponent>
 </OuterComponent>"""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # All lines should be protected
         for line_num in range(1, 6):
@@ -113,7 +113,7 @@ Final paragraph.
 
 export { Component }"""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # Regular markdown should not be protected
         assert not parser.is_protected_line(1)  # Heading
@@ -145,7 +145,7 @@ Normal text.
 
 export default Button"""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         regions = parser.get_protected_regions()
         
         # Should have 3 protected regions: import, component, export
@@ -156,7 +156,7 @@ export default Button"""
 
     def test_empty_content(self):
         """Test parser with empty content."""
-        parser = MDXParser("")
+        parser = MDXParser(content="")
         assert parser.get_protected_regions() == []
         assert not parser.is_protected_line(1)
 
@@ -173,7 +173,7 @@ This is a regular markdown file.
 
 Regular paragraph."""
         
-        parser = MDXParser(content)
+        parser = MDXParser(content=content)
         
         # No lines should be protected in pure markdown
         for line_num in range(1, 10):

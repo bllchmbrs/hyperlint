@@ -4,15 +4,20 @@ from pathlib import Path
 from typing import Callable, Dict, List, Set, Tuple
 
 import spacy
+from pydantic import BaseModel
 
 
-class MDXParser:
+class MDXParser(BaseModel):
     """Parser for MDX files that identifies JSX components and protected regions."""
     
-    def __init__(self, content: str):
-        self.content = content
-        self.lines = content.splitlines()
-        self.protected_regions: List[Tuple[int, int]] = []  # (start_line, end_line)
+    content: str
+    lines: List[str] = []
+    protected_regions: List[Tuple[int, int]] = []  # (start_line, end_line)
+    
+    def model_post_init(self, __context) -> None:
+        """Initialize after Pydantic validation."""
+        self.lines = self.content.splitlines()
+        self.protected_regions = []
         self._identify_protected_regions()
     
     def _identify_protected_regions(self):
