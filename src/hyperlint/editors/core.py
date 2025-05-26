@@ -144,7 +144,7 @@ class BaseEditor(ABC, BaseModel):
         """Initialize MDX parser if file is MDX."""
         self.is_mdx = self.path.suffix.lower() == ".mdx"
         if self.is_mdx:
-            self.mdx_parser = MDXParser(self.get_text())
+            self.mdx_parser = MDXParser(content=self.get_text())
 
     def get_text(self) -> str:
         if self.text is None:
