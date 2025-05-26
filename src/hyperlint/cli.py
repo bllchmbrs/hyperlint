@@ -1,19 +1,95 @@
 from pathlib import Path
 from typing import List, Optional
+import glob
 
 import typer
+from rich.console import Console
+from rich.progress import Progress, TaskID
 
 from .approval import EditorApprovalLog
 from .config import DEFAULT_CONFIG_PATH, create_default_config, load_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
 
+console = Console()
+
+def collect_files(
+    path: str, 
+    recursive: bool = False, 
+    include_patterns: List[str] = None, 
+    exclude_patterns: List[str] = None
+) -> List[Path]:
+    """
+    Collect markdown files from a path (file or directory).
+    
+    Args:
+        path: File path, directory path, or glob pattern
+        recursive: Whether to search directories recursively
+        include_patterns: List of glob patterns to include
+        exclude_patterns: List of glob patterns to exclude
+        
+    Returns:
+        List of Path objects for markdown files
+    """
+    path_obj = Path(path)
+    files = []
+    
+    # If it's a file, return it directly
+    if path_obj.is_file():
+        if path_obj.suffix in ['.md', '.mdx']:
+            return [path_obj]
+        else:
+            console.print(f"[yellow]Warning: {path} is not a markdown file[/yellow]")
+            return []
+    
+    # If it's a directory, find markdown files
+    elif path_obj.is_dir():
+        if recursive:
+            files.extend(path_obj.rglob("*.md"))
+            files.extend(path_obj.rglob("*.mdx"))
+        else:
+            files.extend(path_obj.glob("*.md"))
+            files.extend(path_obj.glob("*.mdx"))
+    
+    # If it's a glob pattern, expand it
+    else:
+        expanded = glob.glob(path, recursive=recursive)
+        for p in expanded:
+            p_obj = Path(p)
+            if p_obj.is_file() and p_obj.suffix in ['.md', '.mdx']:
+                files.append(p_obj)
+    
+    # Apply include patterns
+    if include_patterns:
+        filtered_files = []
+        for file in files:
+            for pattern in include_patterns:
+                if file.match(pattern):
+                    filtered_files.append(file)
+                    break
+        files = filtered_files
+    
+    # Apply exclude patterns
+    if exclude_patterns:
+        filtered_files = []
+        for file in files:
+            excluded = False
+            for pattern in exclude_patterns:
+                if file.match(pattern):
+                    excluded = True
+                    break
+            if not excluded:
+                filtered_files.append(file)
+        files = filtered_files
+    
+    return sorted(set(files))
+
 app = typer.Typer(
     help="""
 Hyperlint: A CLI tool for editing and improving Markdown files.
 
 Available Commands:
-- vale: Apply Vale linting to a markdown file
+- vale: Apply Vale linting to markdown files
 - rules: Manage and apply custom editing rules
 - config: Manage Hyperlint configuration
 """,
@@ -37,28 +113,42 @@ def vale(
     require_approval: bool = True,
     log_approvals: bool = True,
     config_path: Optional[Path] = None,
+    recursive: bool = False,
+    include: List[str] = typer.Option([], help="Include files matching these patterns"),
+    exclude: List[str] = typer.Option([], help="Exclude files matching these patterns"),
 ):
     """
-    Run Vale on a file to identify style issues.
+    Run Vale on markdown files to identify style issues.
 
     Examples:
-        # Process a file
-        hyperlint vale docs/guide.md
+        # Process a single file
+        hyperlint apply vale docs/guide.md
+
+        # Process all markdown files in a directory
+        hyperlint apply vale docs/ --recursive
+
+        # Process with glob pattern
+        hyperlint apply vale "docs/**/*.md"
 
         # Process with custom Vale configuration
-        hyperlint vale guide.md --vale-config-path .vale.ini
+        hyperlint apply vale guide.md --vale-config-path .vale.ini
 
         # Preview changes without applying them
-        hyperlint vale README.md --dry-run
+        hyperlint apply vale README.md --dry-run
 
         # Apply changes without approval prompts
-        hyperlint vale README.md --no-require-approval
+        hyperlint apply vale README.md --no-require-approval
 
-        # Don't log approval decisions
-        hyperlint vale README.md --no-log-approvals
+        # Include/exclude specific patterns
+        hyperlint apply vale docs/ --recursive --exclude "draft_*.md" --include "*.md"
     """
-    path_obj = Path(path)
-
+    # Collect files to process
+    files = collect_files(path, recursive, include or None, exclude or None)
+    
+    if not files:
+        console.print(f"[yellow]No markdown files found for path: {path}[/yellow]")
+        return
+    
     # Load configuration
     config = load_config(config_path)
 
@@ -66,11 +156,42 @@ def vale(
     if dry_run:
         config.dry_run = True
 
-    editor = ValeEditor(path=path_obj, config=config)
-    if config.dry_run:
-        editor.dry_run()
+    # Process files
+    if len(files) == 1:
+        # Single file - use existing logic
+        editor = ValeEditor(path=files[0], config=config)
+        if config.dry_run:
+            editor.dry_run()
+        else:
+            editor.update_file()
     else:
-        editor.update_file()
+        # Multiple files - batch processing
+        console.print(f"[blue]Processing {len(files)} files...[/blue]")
+        
+        success_count = 0
+        error_count = 0
+        
+        with Progress() as progress:
+            task = progress.add_task("Processing files...", total=len(files))
+            
+            for file_path in files:
+                try:
+                    progress.console.print(f"Processing: {file_path}")
+                    editor = ValeEditor(path=file_path, config=config)
+                    if config.dry_run:
+                        editor.dry_run()
+                    else:
+                        editor.update_file()
+                    success_count += 1
+                except Exception as e:
+                    console.print(f"[red]Error processing {file_path}: {e}[/red]")
+                    error_count += 1
+                finally:
+                    progress.advance(task)
+        
+        console.print(f"[green]Completed: {success_count} files processed successfully[/green]")
+        if error_count > 0:
+            console.print(f"[red]Errors: {error_count} files failed[/red]")
 
 
 @edit_app.command(name="rules")
@@ -83,32 +204,45 @@ def apply_rules(
     require_approval: bool = True,
     log_approvals: bool = True,
     config_path: Optional[Path] = None,
+    recursive: bool = False,
+    include: List[str] = typer.Option([], help="Include files matching these patterns"),
+    exclude: List[str] = typer.Option([], help="Exclude files matching these patterns"),
 ):
     """
-    Apply AI-powered rules to a document.
+    Apply AI-powered rules to markdown documents.
 
     Rules are markdown files containing instructions for specific edits.
     Each rule is processed using AI to apply the specified changes.
 
     Examples:
-        # Apply all rules to a file
-        hyperlint rules apply docs/guide.md rules/
+        # Apply all rules to a single file
+        hyperlint apply rules docs/guide.md rules/
+
+        # Apply rules to all markdown files in a directory
+        hyperlint apply rules docs/ rules/ --recursive
+
+        # Apply with glob pattern
+        hyperlint apply rules "docs/**/*.md" rules/
 
         # Apply specific rules to a file
-        hyperlint rules apply README.md rules/ --include-rules passive_voice,bullet_consistency
+        hyperlint apply rules README.md rules/ --include-rules passive_voice,bullet_consistency
 
         # Exclude specific rules
-        hyperlint rules apply docs/guide.md rules/ --exclude-rules deprecated_terms
+        hyperlint apply rules docs/guide.md rules/ --exclude-rules deprecated_terms
 
         # Preview rule application without making changes
-        hyperlint rules apply docs/guide.md rules/ --dry-run
+        hyperlint apply rules docs/guide.md rules/ --dry-run
 
-        # Apply changes with approval prompts
-        hyperlint rules apply README.md rules/ --require-approval
-
-        # Don't log approval decisions
-        hyperlint rules apply README.md rules/ --no-log-approvals
+        # Include/exclude specific file patterns
+        hyperlint apply rules docs/ rules/ --recursive --exclude "draft_*.md"
     """
+    # Collect files to process
+    files = collect_files(path, recursive, include or None, exclude or None)
+    
+    if not files:
+        console.print(f"[yellow]No markdown files found for path: {path}[/yellow]")
+        return
+    
     # Load configuration
     config = load_config(config_path)
 
@@ -120,8 +254,6 @@ def apply_rules(
     
     # Always set rules directory since it's now required
     config.custom_rules.rules_directory = Path(rules_directory)
-
-    path_obj = Path(path)
 
     # Handle include_rules and exclude_rules list parsing
     include_list = []
@@ -145,19 +277,58 @@ def apply_rules(
     if exclude_list:
         config.custom_rules.exclude_rules = exclude_rules
 
-    editor = RulesEditor(
-        path=path_obj, 
-        config=config,
-        rules_directory=Path(rules_directory),
-        include_rules=include_list,
-        exclude_rules=exclude_list,
-        dry_run=dry_run
-    )
+    # Process files
+    if len(files) == 1:
+        # Single file - use existing logic
+        editor = RulesEditor(
+            path=files[0], 
+            config=config,
+            rules_directory=Path(rules_directory),
+            include_rules=include_list,
+            exclude_rules=exclude_list,
+            dry_run=dry_run
+        )
 
-    if config.dry_run:
-        editor.dry_run()
+        if config.dry_run:
+            editor.dry_run()
+        else:
+            editor.update_file()
     else:
-        editor.update_file()
+        # Multiple files - batch processing
+        console.print(f"[blue]Processing {len(files)} files with rules...[/blue]")
+        
+        success_count = 0
+        error_count = 0
+        
+        with Progress() as progress:
+            task = progress.add_task("Processing files...", total=len(files))
+            
+            for file_path in files:
+                try:
+                    progress.console.print(f"Processing: {file_path}")
+                    editor = RulesEditor(
+                        path=file_path, 
+                        config=config,
+                        rules_directory=Path(rules_directory),
+                        include_rules=include_list,
+                        exclude_rules=exclude_list,
+                        dry_run=dry_run
+                    )
+                    
+                    if config.dry_run:
+                        editor.dry_run()
+                    else:
+                        editor.update_file()
+                    success_count += 1
+                except Exception as e:
+                    console.print(f"[red]Error processing {file_path}: {e}[/red]")
+                    error_count += 1
+                finally:
+                    progress.advance(task)
+        
+        console.print(f"[green]Completed: {success_count} files processed successfully[/green]")
+        if error_count > 0:
+            console.print(f"[red]Errors: {error_count} files failed[/red]")
 
 
 # Create rules subcommand group
