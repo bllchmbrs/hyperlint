@@ -144,7 +144,7 @@ class BaseEditor(ABC, BaseModel):
         return self.text
 
     def get_approval_log(self):
-        return get_approval_log(self.editor_type, self.config)
+        return get_approval_log(self.config, self.editor_type)
 
     @abstractmethod
     def prerun_checks(self) -> bool:
@@ -194,37 +194,13 @@ class BaseEditor(ABC, BaseModel):
             logger.debug("does not require approval")
             return True
 
-        if isinstance(issue, ReplaceLineFixableIssue):
-            request = EditorApprovalRequest(
-                file_path=self.path,
-                issue_type="replace",
-                line=issue.line,
-                issue_messages="\n".join(issue.issue_message),
-                existing_content=issue.existing_content,
-                replacement_content=proposed_fix,
-            )
-            approved = self.get_approval_log().prompt_for_approval(request)
-
-        elif isinstance(issue, DeleteLineIssue):
-            request = EditorApprovalRequest(
-                file_path=self.path,
-                issue_type="delete",
-                line=issue.line,
-                issue_messages="\n".join(issue.issue_message),
-                existing_content=issue.existing_content,
-                replacement_content=proposed_fix,
-            )
-            approved = self.get_approval_log().prompt_for_approval(request)
-        elif isinstance(issue, InsertLineIssue):
-            request = EditorApprovalRequest(
-                file_path=self.path,
-                issue_type="insert",
-                line=issue.line,
-                issue_messages="",
-                existing_content="",
-                replacement_content=proposed_fix,
-            )
-            approved = self.get_approval_log().prompt_for_approval(request)
+        # Create context dictionary for approval log
+        context = {
+            'issue': issue,
+            'proposed_fix': proposed_fix,
+            'file_path': str(self.path)
+        }
+        approved = self.get_approval_log().prompt_for_approval(context)
 
         return approved
 
