@@ -1,9 +1,94 @@
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Callable, Dict, List, Set
+from typing import Callable, Dict, List, Set, Tuple
 
 import spacy
+
+
+class MDXParser:
+    """Parser for MDX files that identifies JSX components and protected regions."""
+    
+    def __init__(self, content: str):
+        self.content = content
+        self.lines = content.splitlines()
+        self.protected_regions: List[Tuple[int, int]] = []  # (start_line, end_line)
+        self._identify_protected_regions()
+    
+    def _identify_protected_regions(self):
+        """Identify JSX components, imports, exports, and expressions."""
+        in_jsx_block = False
+        jsx_start_line = None
+        component_name = None
+        brace_count = 0
+        
+        for line_idx, line in enumerate(self.lines, 1):
+            stripped_line = line.strip()
+            
+            # Skip empty lines when not in JSX block
+            if not stripped_line and not in_jsx_block:
+                continue
+            
+            # Check for import/export statements (only when not in JSX block)
+            if not in_jsx_block and stripped_line.startswith(('import ', 'export ')):
+                self.protected_regions.append((line_idx, line_idx))
+                continue
+            
+            # Check for JSX component start (lines starting with < that aren't HTML-like)
+            jsx_start_match = re.match(r'^\s*<([A-Z]\w*)', line)
+            if jsx_start_match and not in_jsx_block:
+                component_name = jsx_start_match.group(1)
+                in_jsx_block = True
+                jsx_start_line = line_idx
+                brace_count = 0
+                
+                # Check if it's a self-closing tag
+                if line.strip().endswith('/>'):
+                    self.protected_regions.append((jsx_start_line, line_idx))
+                    in_jsx_block = False
+                    jsx_start_line = None
+                    component_name = None
+                    continue
+                
+                # Check if it's a single-line component with opening and closing tags
+                if re.search(rf'</{component_name}>', line):
+                    self.protected_regions.append((jsx_start_line, line_idx))
+                    in_jsx_block = False
+                    jsx_start_line = None
+                    component_name = None
+                    continue
+            
+            # Track JSX expressions in curly braces (but only if not already handled as component)
+            elif '{' in line or '}' in line:
+                open_braces = line.count('{')
+                close_braces = line.count('}')
+                
+                if not in_jsx_block and open_braces > 0:
+                    # Standalone JSX expression
+                    self.protected_regions.append((line_idx, line_idx))
+                    continue
+                else:
+                    brace_count += open_braces - close_braces
+            
+            # When in JSX block, check for closing tag
+            if in_jsx_block and component_name:
+                # Check for closing tag
+                if re.match(rf'^\s*</{component_name}>', line):
+                    self.protected_regions.append((jsx_start_line, line_idx))
+                    in_jsx_block = False
+                    jsx_start_line = None
+                    component_name = None
+    
+    def is_protected_line(self, line_number: int) -> bool:
+        """Check if a line is within a protected region."""
+        for start, end in self.protected_regions:
+            if start <= line_number <= end:
+                return True
+        return False
+    
+    def get_protected_regions(self) -> List[Tuple[int, int]]:
+        """Return list of protected regions as (start_line, end_line) tuples."""
+        return self.protected_regions.copy()
 
 
 def get_word_counts(text: str) -> list[tuple[str, int]]:
@@ -213,7 +298,7 @@ def count_adjectives(
 
 def find_markdown_files(
     directory_path: Path,
-    include_pattern: str = "*.md",
+    include_pattern: str = "*.{md,mdx}",
     exclude_patterns: List[str] | None = None,
 ) -> List[Path]:
     """
@@ -254,7 +339,7 @@ def find_markdown_files(
 def process_files_in_directory(
     directory_path: Path,
     processor_func: Callable[[Path], str],
-    include_pattern: str = "*.md",
+    include_pattern: str = "*.{md,mdx}",
     exclude_patterns: List[str] | None = None,
     dry_run: bool = False,
 ) -> Dict[Path, str]:
