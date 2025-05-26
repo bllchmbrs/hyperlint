@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [ main, automations ]
+    branches: [main, automations]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
@@ -14,18 +14,20 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        enable-cache: true
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      run: uv python install ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: uv sync --all-extras --dev
-    
-    - name: Run tests
-      run: uv run pytest
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
+          uv pip install -e .
+
+      - name: Run tests
+        run: uv run pytest
