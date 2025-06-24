@@ -11,7 +11,7 @@ from rich.columns import Columns
 from rich.console import Console
 from rich.text import Text
 
-from ..approval import EditorApprovalRequest, get_approval_log
+from ..approval import get_approval_log
 from ..config import DEFAULT_EDIT_MODEL, DELETE_LINE_MESSAGE, SimpleConfig
 from ..utils import MDXParser
 
