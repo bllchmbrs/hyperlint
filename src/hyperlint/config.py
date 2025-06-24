@@ -133,6 +133,97 @@ def create_default_config(path: Path = DEFAULT_CONFIG_PATH) -> None:
         f.write(final_content)
 
 
+def create_default_rules(rules_dir: Path) -> None:
+    """Create default grammar rules directory and files"""
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Default grammar rules
+    default_rules = {
+        "passive_voice.md": """# Convert Passive Voice to Active Voice
+
+Find instances of passive voice in the document and convert them to active voice. 
+Focus particularly on phrases like "is being done", "was performed", "has been completed", etc.
+Convert them to their active equivalents.
+
+For example:
+- "The test is being performed" → "We are performing the test"
+- "The data was analyzed" → "We analyzed the data"
+- "The code has been reviewed" → "The team reviewed the code"
+
+Only change sentences that would be clearer in active voice.""",
+
+        "bullet_consistency.md": """# Ensure Bullet Point Consistency
+
+Ensure all bullet point lists use consistent capitalization and punctuation.
+
+Each list item should:
+1. Start with a capital letter
+2. End with a period if it's a complete sentence
+3. Not have a period if it's a phrase or incomplete sentence
+4. Maintain parallel structure (all items should be the same grammatical form)
+
+Apply this rule to all bullet point lists in the document.""",
+
+        "sentence_clarity.md": """# Improve Sentence Clarity
+
+Identify and revise sentences that are unclear, overly complex, or difficult to understand.
+
+Focus on:
+- Breaking up run-on sentences
+- Simplifying complex sentences with multiple clauses
+- Removing unnecessary words and phrases
+- Clarifying ambiguous pronoun references
+- Using concrete language instead of vague terms
+
+Make the text more readable while preserving the original meaning.""",
+
+        "paragraph_structure.md": """# Fix Paragraph Structure
+
+Ensure paragraphs have proper structure and flow.
+
+Each paragraph should:
+- Focus on a single main idea
+- Start with a clear topic sentence when appropriate
+- Have supporting sentences that relate to the main idea
+- End with a concluding or transitional sentence when needed
+- Be an appropriate length (not too short or too long)
+
+Split overly long paragraphs and combine very short related paragraphs.""",
+
+        "word_choice.md": """# Improve Word Choice
+
+Replace weak, vague, or repetitive words with more precise and engaging alternatives.
+
+Look for:
+- Overused words like "very", "really", "quite"
+- Vague terms like "thing", "stuff", "somewhat"
+- Repetitive word usage within paragraphs
+- Weak verbs that could be stronger
+- Technical jargon that could be simplified for the audience
+
+Choose words that are more specific, vivid, and appropriate for the context.""",
+
+        "transitions.md": """# Add Smooth Transitions
+
+Add appropriate transition words and phrases to improve the flow between sentences and paragraphs.
+
+Common transition types:
+- Addition: furthermore, moreover, additionally
+- Contrast: however, nevertheless, on the other hand
+- Cause/Effect: therefore, consequently, as a result
+- Time: meanwhile, subsequently, previously
+- Examples: for instance, specifically, in particular
+
+Ensure transitions make logical sense and enhance readability."""
+    }
+    
+    for filename, content in default_rules.items():
+        rule_path = rules_dir / filename
+        if not rule_path.exists():
+            with open(rule_path, "w") as f:
+                f.write(content)
+
+
 def load_config(config_path: Optional[Path] = None) -> SimpleConfig:
     """
     Load configuration with fallbacks:

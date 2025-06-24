@@ -4,10 +4,9 @@ import glob
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, TaskID
+from rich.progress import Progress
 
-from .approval import EditorApprovalLog
-from .config import DEFAULT_CONFIG_PATH, create_default_config, load_config
+from .config import DEFAULT_CONFIG_PATH, create_default_config, create_default_rules, load_config
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
 
@@ -453,6 +452,51 @@ Example:
 # Add config subcommand for managing configurations
 config_app = typer.Typer()
 app.add_typer(config_app, name="config")
+
+
+@app.command(name="init")
+def init_project():
+    """
+    Initialize a new Hyperlint project with default configuration and grammar rules.
+    
+    Creates:
+    - hyperlint-config.yaml: Default configuration file
+    - rules/: Directory with base grammar rules
+    
+    Examples:
+        # Initialize project in current directory
+        hyperlint init
+    """
+    config_path = Path(DEFAULT_CONFIG_PATH)
+    rules_dir = Path("rules")
+    
+    # Check if already initialized
+    if config_path.exists() and rules_dir.exists():
+        console.print("[yellow]Project already initialized (config and rules exist)[/yellow]")
+        return
+    
+    try:
+        # Create config if it doesn't exist
+        if not config_path.exists():
+            create_default_config(config_path)
+            console.print(f"[green]Created configuration: {config_path}[/green]")
+        else:
+            console.print(f"[blue]Configuration already exists: {config_path}[/blue]")
+        
+        # Create rules directory and default rules
+        if not rules_dir.exists():
+            create_default_rules(rules_dir)
+            console.print(f"[green]Created rules directory: {rules_dir}[/green]")
+            console.print(f"[green]Added {len(list(rules_dir.glob('*.md')))} default grammar rules[/green]")
+        else:
+            console.print(f"[blue]Rules directory already exists: {rules_dir}[/blue]")
+            
+        console.print("\n[bold green]Project initialized successfully![/bold green]")
+        console.print("[dim]You can now run: hyperlint apply rules <file> rules/[/dim]")
+        
+    except Exception as e:
+        console.print(f"[red]Error initializing project: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 @config_app.command(name="init")
