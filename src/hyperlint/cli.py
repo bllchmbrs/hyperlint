@@ -1,46 +1,52 @@
+import glob
 from pathlib import Path
 from typing import List, Optional
-import glob
 
 import typer
 from rich.console import Console
 from rich.progress import Progress
 
-from .config import DEFAULT_CONFIG_PATH, create_default_config, create_default_rules, load_config
+from .config import (
+    DEFAULT_CONFIG_PATH,
+    create_default_config,
+    create_default_rules,
+    load_config,
+)
 from .editors.custom_rules import RulesEditor
 from .editors.vale import ValeEditor
 
 console = Console()
 
+
 def collect_files(
-    path: str, 
-    recursive: bool = False, 
-    include_patterns: List[str] = None, 
-    exclude_patterns: List[str] = None
+    path: str,
+    recursive: bool = False,
+    include_patterns: List[str] = None,
+    exclude_patterns: List[str] = None,
 ) -> List[Path]:
     """
     Collect markdown files from a path (file or directory).
-    
+
     Args:
         path: File path, directory path, or glob pattern
         recursive: Whether to search directories recursively
         include_patterns: List of glob patterns to include
         exclude_patterns: List of glob patterns to exclude
-        
+
     Returns:
         List of Path objects for markdown files
     """
     path_obj = Path(path)
     files = []
-    
+
     # If it's a file, return it directly
     if path_obj.is_file():
-        if path_obj.suffix in ['.md', '.mdx']:
+        if path_obj.suffix in [".md", ".mdx"]:
             return [path_obj]
         else:
             console.print(f"[yellow]Warning: {path} is not a markdown file[/yellow]")
             return []
-    
+
     # If it's a directory, find markdown files
     elif path_obj.is_dir():
         if recursive:
@@ -49,15 +55,15 @@ def collect_files(
         else:
             files.extend(path_obj.glob("*.md"))
             files.extend(path_obj.glob("*.mdx"))
-    
+
     # If it's a glob pattern, expand it
     else:
         expanded = glob.glob(path, recursive=recursive)
         for p in expanded:
             p_obj = Path(p)
-            if p_obj.is_file() and p_obj.suffix in ['.md', '.mdx']:
+            if p_obj.is_file() and p_obj.suffix in [".md", ".mdx"]:
                 files.append(p_obj)
-    
+
     # Apply include patterns
     if include_patterns:
         filtered_files = []
@@ -67,7 +73,7 @@ def collect_files(
                     filtered_files.append(file)
                     break
         files = filtered_files
-    
+
     # Apply exclude patterns
     if exclude_patterns:
         filtered_files = []
@@ -80,8 +86,9 @@ def collect_files(
             if not excluded:
                 filtered_files.append(file)
         files = filtered_files
-    
+
     return sorted(set(files))
+
 
 app = typer.Typer(
     help="""
@@ -143,11 +150,11 @@ def vale(
     """
     # Collect files to process
     files = collect_files(path, recursive, include or None, exclude or None)
-    
+
     if not files:
         console.print(f"[yellow]No markdown files found for path: {path}[/yellow]")
         return
-    
+
     # Load configuration
     config = load_config(config_path)
 
@@ -166,13 +173,13 @@ def vale(
     else:
         # Multiple files - batch processing
         console.print(f"[blue]Processing {len(files)} files...[/blue]")
-        
+
         success_count = 0
         error_count = 0
-        
+
         with Progress() as progress:
             task = progress.add_task("Processing files...", total=len(files))
-            
+
             for file_path in files:
                 try:
                     progress.console.print(f"Processing: {file_path}")
@@ -187,8 +194,10 @@ def vale(
                     error_count += 1
                 finally:
                     progress.advance(task)
-        
-        console.print(f"[green]Completed: {success_count} files processed successfully[/green]")
+
+        console.print(
+            f"[green]Completed: {success_count} files processed successfully[/green]"
+        )
         if error_count > 0:
             console.print(f"[red]Errors: {error_count} files failed[/red]")
 
@@ -196,9 +205,9 @@ def vale(
 @edit_app.command(name="rules")
 def apply_rules(
     path: str,
-    rules_directory: str,
     include_rules: List[str] = [],
     exclude_rules: List[str] = [],
+    rules_directory: str = "rules",
     dry_run: bool = False,
     require_approval: bool = True,
     log_approvals: bool = True,
@@ -237,11 +246,11 @@ def apply_rules(
     """
     # Collect files to process
     files = collect_files(path, recursive, include or None, exclude or None)
-    
+
     if not files:
         console.print(f"[yellow]No markdown files found for path: {path}[/yellow]")
         return
-    
+
     # Load configuration
     config = load_config(config_path)
 
@@ -250,7 +259,7 @@ def apply_rules(
         config.dry_run = True
     if require_approval is not None:
         config.approval_mode = require_approval
-    
+
     # Always set rules directory since it's now required
     config.custom_rules.rules_directory = Path(rules_directory)
 
@@ -280,12 +289,12 @@ def apply_rules(
     if len(files) == 1:
         # Single file - use existing logic
         editor = RulesEditor(
-            path=files[0], 
+            path=files[0],
             config=config,
             rules_directory=Path(rules_directory),
             include_rules=include_list,
             exclude_rules=exclude_list,
-            dry_run=dry_run
+            dry_run=dry_run,
         )
 
         if config.dry_run:
@@ -295,25 +304,25 @@ def apply_rules(
     else:
         # Multiple files - batch processing
         console.print(f"[blue]Processing {len(files)} files with rules...[/blue]")
-        
+
         success_count = 0
         error_count = 0
-        
+
         with Progress() as progress:
             task = progress.add_task("Processing files...", total=len(files))
-            
+
             for file_path in files:
                 try:
                     progress.console.print(f"Processing: {file_path}")
                     editor = RulesEditor(
-                        path=file_path, 
+                        path=file_path,
                         config=config,
                         rules_directory=Path(rules_directory),
                         include_rules=include_list,
                         exclude_rules=exclude_list,
-                        dry_run=dry_run
+                        dry_run=dry_run,
                     )
-                    
+
                     if config.dry_run:
                         editor.dry_run()
                     else:
@@ -324,8 +333,10 @@ def apply_rules(
                     error_count += 1
                 finally:
                     progress.advance(task)
-        
-        console.print(f"[green]Completed: {success_count} files processed successfully[/green]")
+
+        console.print(
+            f"[green]Completed: {success_count} files processed successfully[/green]"
+        )
         if error_count > 0:
             console.print(f"[red]Errors: {error_count} files failed[/red]")
 
@@ -458,23 +469,25 @@ app.add_typer(config_app, name="config")
 def init_project():
     """
     Initialize a new Hyperlint project with default configuration and grammar rules.
-    
+
     Creates:
     - hyperlint-config.yaml: Default configuration file
     - rules/: Directory with base grammar rules
-    
+
     Examples:
         # Initialize project in current directory
         hyperlint init
     """
     config_path = Path(DEFAULT_CONFIG_PATH)
     rules_dir = Path("rules")
-    
+
     # Check if already initialized
     if config_path.exists() and rules_dir.exists():
-        console.print("[yellow]Project already initialized (config and rules exist)[/yellow]")
+        console.print(
+            "[yellow]Project already initialized (config and rules exist)[/yellow]"
+        )
         return
-    
+
     try:
         # Create config if it doesn't exist
         if not config_path.exists():
@@ -482,18 +495,20 @@ def init_project():
             console.print(f"[green]Created configuration: {config_path}[/green]")
         else:
             console.print(f"[blue]Configuration already exists: {config_path}[/blue]")
-        
+
         # Create rules directory and default rules
         if not rules_dir.exists():
             create_default_rules(rules_dir)
             console.print(f"[green]Created rules directory: {rules_dir}[/green]")
-            console.print(f"[green]Added {len(list(rules_dir.glob('*.md')))} default grammar rules[/green]")
+            console.print(
+                f"[green]Added {len(list(rules_dir.glob('*.md')))} default grammar rules[/green]"
+            )
         else:
             console.print(f"[blue]Rules directory already exists: {rules_dir}[/blue]")
-            
+
         console.print("\n[bold green]Project initialized successfully![/bold green]")
         console.print("[dim]You can now run: hyperlint apply rules <file> rules/[/dim]")
-        
+
     except Exception as e:
         console.print(f"[red]Error initializing project: {e}[/red]")
         raise typer.Exit(code=1)
